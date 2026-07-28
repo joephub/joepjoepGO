@@ -1,44 +1,33 @@
-# RouteRijder — direct te publiceren
+# RouteRijder v5
 
-## Op GitHub Pages zetten
+Statische navigatie-PWA voor GitHub Pages. Geen npm-build nodig.
 
-1. Pak de ZIP uit.
-2. Maak op GitHub een nieuwe **public** repository, bijvoorbeeld `routerijder`.
-3. Kies **uploading an existing file** en upload alle bestanden uit de uitgepakte map.
-4. Klik onderaan op **Commit changes**.
-5. Ga naar **Settings > Pages**.
-6. Kies bij **Source**: `Deploy from a branch`.
-7. Kies branch `main` en map `/ (root)` en klik **Save**.
-8. Na enkele minuten staat de site op:
-   `https://JOUW-GEBRUIKERSNAAM.github.io/routerijder/`
+## Functies
 
-## Eerste gebruik
-
-1. Maak een GraphHopper API-key aan via het GraphHopper-dashboard.
-2. Open RouteRijder en klik op het tandwiel.
-3. Plak de key en sla op.
-4. Open de website op je telefoon via HTTPS.
-5. Geef toestemming voor locatiegebruik.
-6. Kies `Start GPS`, zoek een adres of laad een GPX-bestand.
-
-## Wat werkt
-
-- Live GPS en kaartrotatie op basis van rijrichting.
-- Adres zoeken en routeberekening via GraphHopper.
+- Echte GPS op mobiel.
+- Handmatig vertrekadres op desktop.
+- Vertrekpunt kiezen door op de kaart te klikken.
+- Bestemming zoeken via GraphHopper.
+- Route-overzicht en navigatieweergave.
 - GPX-import.
-- Detectie wanneer je circa 60 meter van de route afwijkt.
-- Berekening van tijdelijke routes naar meerdere punten verderop.
-- Hervatten van de oorspronkelijke GPX-route zodra je opnieuw aansluit.
-- Installeerbaar als PWA.
+- Desktop-routesimulatie met 1x, 5x en 20x.
+- Ontwikkelpaneel met positie, snelheid, voortgang en afstand tot route.
+- Slimme heraansluiting als echte GPS van een route afwijkt.
 
-## Beperkingen van deze eerste versie
+## Publiceren
 
-- De GraphHopper-key staat lokaal in de browser. Voor breed publiek gebruik moet deze achter een proxy.
-- De oorspronkelijke GPX wordt nog niet vooraf gematcht op het wegennet.
-- OpenStreetMap publieke tiles zijn bedoeld voor beperkt prototypegebruik.
-- Achtergrond-GPS is in mobiele browsers niet volledig betrouwbaar.
-- Test de toepassing niet actief tijdens het besturen; gebruik een telefoonhouder en stel routes vooraf in.
+Upload alle bestanden naar de root van je GitHub Pages-repository. Open daarna bijvoorbeeld:
 
+`https://joephub.github.io/maps/?v=5`
 
-## Versie 3
-MapLibre is vastgezet op versie 5.6.2 via jsDelivr. De service worker is tijdelijk uitgeschakeld om oude caches tijdens ontwikkeling te voorkomen.
+## Testen op desktop
+
+1. Klik op `GPS` linksboven zodat dit `Hand` wordt.
+2. Vul een vertrekadres in en druk Enter.
+3. Kies een resultaat.
+4. Vul een bestemming in en druk Enter of klik op de pijl.
+5. Open `Test` en klik op `Simuleer`.
+
+## GraphHopper
+
+Vul via het tandwiel een GraphHopper API-key in. De key wordt lokaal in de browser opgeslagen.

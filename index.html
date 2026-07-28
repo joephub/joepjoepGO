@@ -13,40 +13,89 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="topbar">
-    <div class="searchbox"><input id="query" placeholder="Waar wil je naartoe?" /><button id="search" class="icon-button search-action">→</button></div>
-    <button id="settings" class="icon-button">⚙</button>
-  </div>
-  <div id="results" class="results" hidden></div>
-  <div id="status" class="status">Klaar om te rijden</div>
-  <div class="bottom-panel">
-    <div class="instruction"><strong id="instruction">Geen actieve route</strong><small id="mode">RouteRijder</small></div>
-    <div class="controls">
-      <button id="gps" class="primary-button">Start GPS</button>
-      <button id="gpx" class="primary-button">Laad GPX</button>
-      <button id="clear" class="primary-button">Wis route</button>
+
+  <header class="planner-card">
+    <div class="planner-row">
+      <button id="startMode" class="mode-button" title="Wissel tussen GPS en handmatig vertrekpunt">GPS</button>
+      <input id="startQuery" placeholder="Vertrekpunt: mijn locatie" autocomplete="off" disabled />
+      <button id="useMapStart" class="mini-button" title="Kies vertrekpunt op kaart">⌖</button>
     </div>
-  </div>
-  <input id="file" class="hidden-file" type="file" accept=".gpx,application/gpx+xml" />
+    <div class="planner-row">
+      <span class="route-dot destination-dot"></span>
+      <input id="destinationQuery" placeholder="Waar wil je naartoe?" autocomplete="off" />
+      <button id="planRoute" class="go-button" title="Route berekenen">→</button>
+      <button id="settings" class="settings-button" title="Instellingen">⚙</button>
+    </div>
+    <div id="searchResults" class="search-results" hidden></div>
+  </header>
+
+  <div id="status" class="status">Klaar om te testen</div>
+
+  <aside id="developerPanel" class="developer-panel" hidden>
+    <div class="panel-title-row">
+      <strong>Testmodus</strong>
+      <button id="closeDeveloper" class="text-button">Sluiten</button>
+    </div>
+    <div class="developer-grid">
+      <span>Bron</span><strong id="devSource">Geen</strong>
+      <span>Positie</span><strong id="devPosition">-</strong>
+      <span>Snelheid</span><strong id="devSpeed">0 km/u</strong>
+      <span>Voortgang</span><strong id="devProgress">0%</strong>
+      <span>Afstand route</span><strong id="devOffRoute">-</strong>
+      <span>Volgende stap</span><strong id="devInstruction">-</strong>
+    </div>
+    <div class="sim-controls">
+      <button id="simPlay" class="control-button primary">▶ Simuleer</button>
+      <button id="simReset" class="control-button">↺ Reset</button>
+      <select id="simSpeed" aria-label="Simulatiesnelheid">
+        <option value="1">1×</option>
+        <option value="5" selected>5×</option>
+        <option value="20">20×</option>
+      </select>
+    </div>
+  </aside>
+
+  <section class="bottom-panel">
+    <div class="instruction-card">
+      <div class="maneuver-icon" id="maneuverIcon">↑</div>
+      <div>
+        <strong id="instruction">Geen actieve route</strong>
+        <small id="routeMeta">Kies een vertrekpunt en bestemming</small>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="gps" class="control-button">Start GPS</button>
+      <button id="gpx" class="control-button">Laad GPX</button>
+      <button id="overview" class="control-button">Overzicht</button>
+      <button id="developer" class="control-button">Test</button>
+      <button id="clear" class="control-button danger">Wis</button>
+    </div>
+  </section>
+
+  <input id="gpxFile" class="hidden-file" type="file" accept=".gpx,application/gpx+xml" />
+
   <div id="backdrop" class="sheet-backdrop" hidden></div>
-  <div id="sheet" class="sheet" hidden>
-    <h2>Instellingen</h2>
-    <label>GraphHopper API-key</label>
+  <section id="settingsSheet" class="sheet" hidden>
+    <div class="panel-title-row">
+      <h2>Instellingen</h2>
+      <button id="closeSettings" class="text-button">Sluiten</button>
+    </div>
+    <label for="apiKey">GraphHopper API-key</label>
     <input id="apiKey" type="password" placeholder="Plak hier je API-key" />
-    <p>De sleutel wordt alleen lokaal in deze browser opgeslagen. Voor een publiek gebruikte app hoort de API via een beveiligde proxy te lopen.</p>
-    <p>De proefversie gebruikt openbare OpenStreetMap-kaarttegels. Kies voor intensief gebruik een eigen tileprovider.</p>
-    <button id="saveSettings" class="primary-button active">Opslaan</button>
-  </div>
+    <label for="vehicleProfile">Routeprofiel</label>
+    <select id="vehicleProfile">
+      <option value="car">Auto</option>
+      <option value="bike">Fiets</option>
+      <option value="foot">Lopen</option>
+    </select>
+    <label class="check-row"><input id="autoFollow" type="checkbox" checked /> Automatisch volgen zodra de rit start</label>
+    <p>De API-key wordt alleen lokaal in deze browser opgeslagen. Voor een openbare app hoort deze achter een beveiligde proxy.</p>
+    <button id="saveSettings" class="control-button primary full-width">Opslaan</button>
+  </section>
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(registrations => {
-    registrations.forEach(registration => registration.unregister());
-  });
-}
-</script>
+<script src="./app.js?v=5"></script>
 </body>
 </html>
