@@ -10,6 +10,8 @@
     profile: saved.profile || 'car',
     autoFollow: saved.autoFollow !== false,
     keepAwake: saved.keepAwake !== false,
+    avatar: saved.avatar || 'motor',
+    customAvatar: saved.customAvatar || '',
     wakeLock: null,
     startMode: 'gps',
     startPoint: null,
@@ -232,9 +234,37 @@
     else state[key].setLngLat(point);
   }
 
+  const AVATAR_EMOJI = {
+    'car-blue': '🚙',
+    'car-red': '🚗',
+    'car-racing': '🏎️',
+    'motor': '🏍️',
+    'scooter': '🛵'
+  };
+
+  function createAvatarElement() {
+    const element = document.createElement('div');
+    element.className = 'navigation-avatar';
+    if (state.avatar === 'custom' && state.customAvatar) {
+      element.classList.add('photo-avatar');
+      element.style.backgroundImage = `url(${state.customAvatar})`;
+    } else {
+      element.textContent = AVATAR_EMOJI[state.avatar] || AVATAR_EMOJI.motor;
+    }
+    return element;
+  }
+
+  function refreshCurrentMarker() {
+    if (!state.current) return;
+    if (state.marker) state.marker.remove();
+    state.marker = new maplibregl.Marker({ element: createAvatarElement(), anchor: 'center' })
+      .setLngLat(state.current)
+      .addTo(map);
+  }
+
   function setCurrentPosition(point, options = {}) {
     state.current = point;
-    if (!state.marker) state.marker = new maplibregl.Marker({ color: '#16a34a' }).setLngLat(point).addTo(map);
+    if (!state.marker) refreshCurrentMarker();
     else state.marker.setLngLat(point);
     if (options.source) $('devSource').textContent = options.source;
     $('devPosition').textContent = `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`;
@@ -718,7 +748,7 @@
 
   function segmentGpxXml(segment) {
     const trackPoints = segment.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v20" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} - traject ${segment.id}</name></metadata>\n  <trk><name>${escapeXml(segment.name)} - traject ${segment.id}</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v21" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} - traject ${segment.id}</name></metadata>\n  <trk><name>${escapeXml(segment.name)} - traject ${segment.id}</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
   }
 
   function downloadText(text, fileName) {
@@ -746,7 +776,7 @@
       const points = segment.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
       return `    <trkseg>\n${points}\n    </trkseg>`;
     }).join('\n');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v20" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(baseName)} - samengestelde selectie</name></metadata>\n  <trk><name>${escapeXml(baseName)} - samengestelde selectie</name>\n${trackSegments}\n  </trk>\n</gpx>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v21" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(baseName)} - samengestelde selectie</name></metadata>\n  <trk><name>${escapeXml(baseName)} - samengestelde selectie</name>\n${trackSegments}\n  </trk>\n</gpx>`;
   }
 
   function exportSelectedGpxSegments() {
@@ -966,7 +996,7 @@
     const coordinates = state.gpxEditor.editCoordinates;
     if (coordinates.length < 2) return status('Er zijn onvoldoende punten om te exporteren.');
     const trackPoints = coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v20" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v21" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
     const blob = new Blob([xml], { type: 'application/gpx+xml;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -979,6 +1009,7 @@
   async function loadGpx(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
+    clearRoute({ silent: true, preserveGps: true });
     try {
       const xml = new DOMParser().parseFromString(await file.text(), 'application/xml');
       if (xml.querySelector('parsererror')) throw new Error('Dit GPX-bestand kon niet worden gelezen.');
@@ -1265,30 +1296,43 @@
     state.simulation.timer = requestAnimationFrame(simulationFrame);
   }
 
-  function clearRoute() {
+  function clearRoute(options = {}) {
+    const { silent = false, preserveGps = true } = options || {};
     pauseSimulation();
     state.route = null;
     document.body.classList.remove('route-ready');
     setNavigationMode(false);
     state.original = [];
     removeSelectedMarker();
+    setBoxSelectMode(false);
     state.gpxEditor = { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null };
     state.gpxAnalysis = { sourceParts: [], segments: [], active: false, selectedIds: new Set(), jumpThresholdMeters: 5000 };
+
     if ($('analyseGpx')) $('analyseGpx').hidden = true;
-    map.getSource('gpx-analysis')?.setData(emptyGeoJson());
     if ($('editGpx')) $('editGpx').hidden = true;
+    if ($('gpxEditorSheet')) $('gpxEditorSheet').hidden = true;
+    if ($('gpxAnalysisPanel')) $('gpxAnalysisPanel').hidden = true;
+    if ($('gpxAnalysisSheet')) $('gpxAnalysisSheet').hidden = true;
+    if ($('fuelSheet')) $('fuelSheet').hidden = true;
+    if ($('backdrop')) $('backdrop').hidden = true;
+
+    map.getSource('gpx-analysis')?.setData(emptyGeoJson());
+    map.getSource('gpx-edit-points')?.setData(emptyGeoJson());
     state.destinationPoint = null;
+    state.startPoint = state.startMode === 'gps' && preserveGps ? state.current : null;
     state.mode = 'idle';
     state.progressKm = 0;
     state.simulation.distanceKm = 0;
     ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
     if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
+    if (state.startMarker) { state.startMarker.remove(); state.startMarker = null; }
     $('destinationQuery').value = '';
-    $('instruction').textContent = 'Geen actieve route';
+    $('startQuery').value = state.startMode === 'gps' ? '' : '';
+    $('instruction').textContent = 'Volg de route';
     setRemaining('-', '-');
     $('maneuverIcon').textContent = '↑';
     updateDeveloper();
-    status('Route gewist');
+    if (!silent) status('Route en GPX-gegevens gewist');
   }
 
   function updateDeveloper() {
@@ -1299,14 +1343,73 @@
     }
   }
 
-  function openSettings() { $('apiKey').value = state.apiKey; $('vehicleProfile').value = state.profile; $('autoFollow').checked = state.autoFollow; $('keepAwake').checked = state.keepAwake; $('settingsSheet').hidden = false; $('backdrop').hidden = false; }
+  function updateAvatarChoiceUi() {
+    document.querySelectorAll('.avatar-choice').forEach(button => {
+      button.classList.toggle('selected', button.dataset.avatar === state.avatar);
+      button.setAttribute('aria-pressed', button.dataset.avatar === state.avatar ? 'true' : 'false');
+    });
+    const uploadButton = $('uploadAvatarButton');
+    if (uploadButton) uploadButton.classList.toggle('selected', state.avatar === 'custom');
+  }
+
+  function chooseAvatar(avatar) {
+    state.avatar = avatar;
+    updateAvatarChoiceUi();
+    refreshCurrentMarker();
+  }
+
+  async function processAvatarFile(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return status('Kies een geldig afbeeldingsbestand.');
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
+      });
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext('2d');
+      const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight);
+      const width = image.naturalWidth * scale;
+      const height = image.naturalHeight * scale;
+      context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+      state.customAvatar = canvas.toDataURL('image/jpeg', 0.82);
+      chooseAvatar('custom');
+      status('Foto ingesteld als avatar. Klik Opslaan om te bewaren.');
+    } catch (_) {
+      status('De foto kon niet worden verwerkt.');
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  function openSettings() {
+    $('apiKey').value = state.apiKey;
+    $('vehicleProfile').value = state.profile;
+    $('autoFollow').checked = state.autoFollow;
+    $('keepAwake').checked = state.keepAwake;
+    updateAvatarChoiceUi();
+    $('settingsSheet').hidden = false;
+    $('backdrop').hidden = false;
+  }
   function closeSettings() { $('settingsSheet').hidden = true; $('backdrop').hidden = true; }
   function saveSettings() {
     state.apiKey = $('apiKey').value.trim();
     state.profile = $('vehicleProfile').value;
     state.autoFollow = $('autoFollow').checked;
     state.keepAwake = $('keepAwake').checked;
-    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, keepAwake: state.keepAwake, layoutMode: state.layoutMode }));
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, keepAwake: state.keepAwake, layoutMode: state.layoutMode, avatar: state.avatar, customAvatar: state.customAvatar }));
     if (state.navigationActive) { if (state.keepAwake) requestWakeLock(); else releaseWakeLock(); }
     closeSettings();
     status('Instellingen opgeslagen');
@@ -1314,7 +1417,7 @@
 
   function bind(id, eventName, handler) {
     const element = $(id);
-    if (!element) { console.warn(`joepjoepGO v20: element #${id} ontbreekt`); return; }
+    if (!element) { console.warn(`joepjoepGO v21: element #${id} ontbreekt`); return; }
     element.addEventListener(eventName, handler);
   }
 
@@ -1354,6 +1457,9 @@
   bind('closeSettings', 'click', closeSettings);
   bind('backdrop', 'click', () => { closeSettings(); closeFuelSheet(); closeGpxEditor(); closeGpxAnalysis(); });
   bind('saveSettings', 'click', saveSettings);
+  document.querySelectorAll('.avatar-choice').forEach(button => button.addEventListener('click', () => chooseAvatar(button.dataset.avatar)));
+  bind('uploadAvatarButton', 'click', () => $('avatarFile')?.click());
+  bind('avatarFile', 'change', processAvatarFile);
   bind('destinationQuery', 'input', () => { state.destinationPoint = null; });
   bind('startQuery', 'input', () => { state.startPoint = null; });
   bind('destinationQuery', 'keydown', async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message); } } });
@@ -1378,4 +1484,6 @@
   if ($('apiKey')) $('apiKey').value = state.apiKey;
   $('vehicleProfile').value = state.profile;
   $('autoFollow').checked = state.autoFollow;
+  if ($('keepAwake')) $('keepAwake').checked = state.keepAwake;
+  updateAvatarChoiceUi();
 })();

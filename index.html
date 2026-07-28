@@ -13,7 +13,7 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v20</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v21</div>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
   <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
 
@@ -107,6 +107,21 @@
     </select>
     <label class="check-row"><input id="autoFollow" type="checkbox" checked /> Automatisch volgen zodra de rit start</label>
     <label class="check-row"><input id="keepAwake" type="checkbox" checked /> Scherm wakker houden tijdens navigatie</label>
+
+    <div class="avatar-settings">
+      <label>Kies avatar</label>
+      <div id="avatarChoices" class="avatar-choices" role="radiogroup" aria-label="Kies navigatieavatar">
+        <button type="button" class="avatar-choice" data-avatar="car-blue" title="Blauwe auto">🚙</button>
+        <button type="button" class="avatar-choice" data-avatar="car-red" title="Rode auto">🚗</button>
+        <button type="button" class="avatar-choice" data-avatar="car-racing" title="Sportauto">🏎️</button>
+        <button type="button" class="avatar-choice" data-avatar="motor" title="Motor">🏍️</button>
+        <button type="button" class="avatar-choice" data-avatar="scooter" title="Scooter">🛵</button>
+      </div>
+      <button id="uploadAvatarButton" type="button" class="control-button avatar-upload">📷 Upload foto of maak selfie</button>
+      <input id="avatarFile" class="hidden-file" type="file" accept="image/*" capture="user" />
+      <p class="avatar-help">De foto wordt rond uitgesneden en alleen lokaal in deze browser bewaard.</p>
+    </div>
+
     <p>De API-key wordt alleen lokaal in deze browser opgeslagen. Voor een openbare app hoort deze achter een beveiligde proxy.</p>
     <button id="saveSettings" class="control-button primary full-width">Opslaan</button>
   </section>
@@ -138,15 +153,11 @@
       <div><h2>GPX-analyse</h2><p class="editor-subtitle">Losse tracks, tracksegmenten en grote sprongen worden als afzonderlijke trajecten weergegeven.</p></div>
       <button id="closeGpxAnalysis" class="text-button">Sluiten</button>
     </div>
-    <div class="gpx-analysis-settings">
-      <label for="gpxJumpThreshold">
-        <span>Knip bij verbindingssprong langer dan</span>
-        <span class="gpx-threshold-input"><input id="gpxJumpThreshold" type="number" min="0" step="100" value="5000" inputmode="numeric"><strong>meter</strong></span>
-      </label>
-      <button id="rerunGpxAnalysis" class="control-button primary">Opnieuw analyseren</button>
-      <small>Dit is de rechte afstand tussen twee opeenvolgende GPX-punten. Vul 0 in om alleen bestaande tracks en tracksegmenten te gebruiken.</small>
-    </div>
     <p id="gpxAnalysisSummary" class="gpx-analysis-summary"></p>
+    <div class="gpx-threshold-control">
+      <label for="gpxJumpThreshold">Knip bij verbindingssprong langer dan</label>
+      <div><input id="gpxJumpThreshold" type="number" min="0" step="100" value="5000" /><span>meter</span><button id="rerunGpxAnalysis" class="control-button">Opnieuw analyseren</button></div>
+    </div>
     <div class="gpx-analysis-toolbar">
       <button id="selectAllGpxSegments" class="control-button">Selecteer alles</button>
       <button id="clearGpxSegmentSelection" class="control-button">Wis selectie</button>
@@ -171,6 +182,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=20"></script>
+<script src="./app.js?v=21"></script>
 </body>
 </html>

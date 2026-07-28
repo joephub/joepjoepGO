@@ -609,3 +609,47 @@ body.gpx-box-selecting #map canvas { cursor: crosshair !important; }
   .gpx-analysis-settings { grid-template-columns: 1fr; }
   .gpx-analysis-settings .control-button { width: 100%; }
 }
+
+/* v21: navigatieavatars */
+.avatar-settings { margin-top: 18px; padding-top: 4px; border-top: 1px solid #e2e8f0; }
+.avatar-choices { display: grid; grid-template-columns: repeat(5, minmax(48px, 1fr)); gap: 8px; }
+.avatar-choice {
+  min-height: 56px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  background: #f1f5f9;
+  font-size: 28px;
+  line-height: 1;
+}
+.avatar-choice.selected,
+.avatar-upload.selected { border-color: #2563eb; background: #dbeafe; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+.avatar-upload { width: 100%; margin-top: 10px; border: 2px solid transparent; }
+.avatar-help { margin: 8px 0 0 !important; font-size: 12px; }
+.navigation-avatar {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,.96);
+  border: 3px solid #ffffff;
+  box-shadow: 0 5px 16px rgba(15,23,42,.38);
+  font-size: 28px;
+  line-height: 1;
+  user-select: none;
+}
+.navigation-avatar.photo-avatar {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+@media (max-width: 620px) {
+  .avatar-choices { grid-template-columns: repeat(5, 1fr); }
+  .avatar-choice { min-height: 50px; font-size: 25px; }
+  .navigation-avatar { width: 42px; height: 42px; font-size: 25px; }
+}
+.gpx-threshold-control { margin: 12px 0; padding: 12px; border-radius: 14px; background: #f8fafc; }
+.gpx-threshold-control label { margin: 0 0 7px; }
+.gpx-threshold-control > div { display: grid; grid-template-columns: minmax(90px, 140px) auto minmax(150px, 1fr); gap: 8px; align-items: center; }
+.gpx-threshold-control input { width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px; }
+@media (max-width: 620px) { .gpx-threshold-control > div { grid-template-columns: 1fr auto; } .gpx-threshold-control button { grid-column: 1 / -1; } }
