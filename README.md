@@ -1,4 +1,4 @@
-# joepjoepGO v17
+# joepjoepGO v18
 
 Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-bewerker.
 
@@ -9,3 +9,7 @@ Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-be
 - Verwijder de selectie met **Verwijder selectie**.
 - Start- en eindpunt blijven behouden.
 - Exporteer de aangepaste lijn als een nieuw GPX-bestand.
+
+
+## GPX-analyse
+Na het laden van een GPX kan **Analyseer GPX** worden gekozen. Expliciete tracks/tracksegmenten en abrupte geografische sprongen worden als aparte gekleurde trajecten getoond. Elk traject is afzonderlijk als GPX te exporteren.

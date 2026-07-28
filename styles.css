@@ -513,3 +513,14 @@ body.gpx-box-selecting #map canvas { cursor: crosshair !important; }
   .gpx-editor-toolbar { grid-template-columns: 1fr 1fr; }
   .gpx-selection-count { grid-column: 1 / -1; text-align: left; }
 }
+
+/* GPX-analyse v18 */
+.gpx-analysis-sheet { z-index: 32; }
+.gpx-analysis-summary { margin: 10px 0 12px !important; color: #475569; }
+.gpx-analysis-list { display: grid; gap: 9px; max-height: 52vh; overflow: auto; margin-bottom: 12px; }
+.gpx-analysis-row { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #dbe3ee; border-radius: 14px; cursor: pointer; background: #fff; }
+.gpx-analysis-row:hover { background: #f8fafc; }
+.gpx-analysis-row div { min-width: 0; display: grid; gap: 2px; }
+.gpx-analysis-row small { display: block; color: #64748b; overflow-wrap: anywhere; }
+.gpx-color-dot { width: 14px; height: 14px; border-radius: 999px; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #cbd5e1; }
+@media (min-width: 900px) { .gpx-analysis-sheet { width: min(560px, 38vw); left: auto; right: 12px; bottom: 12px; max-height: calc(100vh - 24px); border-radius: 22px; } }
