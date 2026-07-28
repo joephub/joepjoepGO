@@ -3,36 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
-  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="./manifest.webmanifest?v=22" />
   <link rel="icon" href="./icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=22" />
   <title>joepjoepGO</title>
 </head>
 <body>
-<div class="app">
-  <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v21</div>
-  <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
-  <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
+<div id="app" class="app">
+  <div id="map" class="map" aria-label="Kaart"></div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v22</div>
+  <button id="settings" class="floating-button settings-button" title="Instellingen" aria-label="Instellingen">⚙</button>
+  <button id="layoutToggle" class="floating-button layout-toggle" title="Draai navigatiescherm" aria-label="Draai navigatiescherm" hidden>↻</button>
 
-  <header class="planner-card">
-    <div class="planner-row">
+  <header id="plannerCard" class="planner-card">
+    <div class="planner-row planner-row-start">
       <button id="startMode" class="mode-button" title="Wissel tussen GPS en handmatig vertrekpunt">GPS</button>
       <input id="startQuery" placeholder="Vertrekpunt: mijn locatie" autocomplete="off" disabled />
-      <button id="useMapStart" class="mini-button" title="Kies vertrekpunt op kaart">⌖</button>
+      <button id="useMapStart" class="mini-button" title="Kies vertrekpunt op kaart" aria-label="Kies vertrekpunt op kaart">⌖</button>
     </div>
-    <div class="planner-row">
-      <span class="route-dot destination-dot"></span>
+    <div class="planner-row planner-row-destination">
+      <span class="route-dot destination-dot" aria-hidden="true"></span>
       <input id="destinationQuery" placeholder="Waar wil je naartoe?" autocomplete="off" />
-      <button id="useMapDestination" class="mini-button" title="Kies bestemming op kaart">⌖</button>
-      <button id="planRoute" class="go-button" title="Route berekenen">→</button>
+      <button id="useMapDestination" class="mini-button" title="Kies bestemming op kaart" aria-label="Kies bestemming op kaart">⌖</button>
+      <button id="planRoute" class="go-button" title="Route berekenen" aria-label="Route berekenen">→</button>
     </div>
     <div id="searchResults" class="search-results" hidden></div>
   </header>
 
-  <div id="status" class="status">Klaar om te testen</div>
+  <div id="status" class="status-toast" role="status" aria-live="polite" hidden></div>
 
   <aside id="developerPanel" class="developer-panel" hidden>
     <div class="panel-title-row">
@@ -58,42 +58,68 @@
     </div>
   </aside>
 
-  <section class="bottom-panel">
-    <div id="routeSummary" class="instruction-card" hidden>
+  <nav id="homeActions" class="home-actions" aria-label="Hoofdacties">
+    <button id="gps" class="control-button">Start GPS</button>
+    <button id="gpx" class="control-button">Laad GPX</button>
+    <button id="developer" class="control-button desktop-test-button">Test</button>
+  </nav>
+
+  <section id="routePreview" class="route-preview" hidden>
+    <div class="route-preview-header">
+      <div class="route-preview-copy">
+        <span id="previewEyebrow" class="eyebrow">Route</span>
+        <strong id="previewTitle">Route gereed</strong>
+        <small id="previewMessage"></small>
+      </div>
+      <button id="startNavigation" class="start-navigation-button" title="Start navigatie" aria-label="Start navigatie">▶</button>
+    </div>
+    <div class="route-preview-stats">
+      <div><span>Afstand</span><strong id="previewDistance">-</strong></div>
+      <div><span>Tijd</span><strong id="previewTime">-</strong></div>
+      <div><span>Trajecten</span><strong id="previewSegments">-</strong></div>
+    </div>
+    <div class="route-preview-actions">
+      <button id="analyseGpx" class="compact-button" hidden>Analyse</button>
+      <button id="editGpx" class="compact-button" hidden>Bewerk</button>
+      <button id="overview" class="compact-button">Overzicht</button>
+      <button id="replaceGpx" class="compact-button">Open GPX</button>
+      <button id="clear" class="compact-button danger">Wis</button>
+    </div>
+  </section>
+
+  <aside id="navigationPanel" class="navigation-panel" hidden>
+    <div id="routeSummary" class="navigation-summary">
       <div class="nav-main-field">
         <div class="maneuver-icon" id="maneuverIcon">↑</div>
-        <strong id="instruction">Volg de route</strong>
+        <div class="instruction-copy">
+          <span id="nextDistance" class="next-distance">Nu</span>
+          <strong id="instruction">Volg de route</strong>
+        </div>
       </div>
-      <div class="nav-stat-field">
-        <span class="nav-stat-label">Afstand</span>
-        <strong id="remainingDistance">-</strong>
-      </div>
-      <div class="nav-stat-field">
-        <span class="nav-stat-label">Tijd</span>
-        <strong id="remainingTime">-</strong>
+      <div class="nav-stat-grid">
+        <div class="nav-stat-field">
+          <span class="nav-stat-label">Resterend</span>
+          <strong id="remainingDistance">-</strong>
+        </div>
+        <div class="nav-stat-field">
+          <span class="nav-stat-label">Aankomst over</span>
+          <strong id="remainingTime">-</strong>
+        </div>
       </div>
       <small id="routeMeta" hidden></small>
     </div>
-    <div class="controls">
-      <button id="gps" class="control-button">Start GPS</button>
-      <button id="gpx" class="control-button">Laad GPX</button>
-      <button id="analyseGpx" class="control-button" hidden>Analyseer GPX</button>
-      <button id="editGpx" class="control-button" hidden>Bewerk GPX</button>
-      <button id="overview" class="control-button">Overzicht</button>
-      <button id="developer" class="control-button">Test</button>
-      <button id="clear" class="control-button danger">Wis</button>
-    </div>
-    <div id="routeActions" class="route-actions" hidden>
+    <div id="routeActions" class="route-actions">
       <button id="fuel" class="route-action fuel-button" title="Tankstation zoeken" aria-label="Tankstation zoeken">⛽</button>
-      <button id="stopNavigation" class="route-action stop-button" title="Navigatie stoppen" aria-label="Navigatie stoppen">✕</button>
+      <button id="stopNavigation" class="route-action stop-button" title="Navigatie pauzeren" aria-label="Navigatie pauzeren">✕</button>
     </div>
-  </section>
+  </aside>
 
   <input id="gpxFile" class="hidden-file" type="file" accept=".gpx,application/gpx+xml" />
 
   <div id="backdrop" class="sheet-backdrop" hidden></div>
-  <section id="settingsSheet" class="sheet" hidden>
-    <div class="panel-title-row">
+
+  <section id="settingsSheet" class="sheet settings-sheet" hidden>
+    <div class="panel-title-row sheet-title-row">
       <h2>Instellingen</h2>
       <button id="closeSettings" class="text-button">Sluiten</button>
     </div>
@@ -107,6 +133,7 @@
     </select>
     <label class="check-row"><input id="autoFollow" type="checkbox" checked /> Automatisch volgen zodra de rit start</label>
     <label class="check-row"><input id="keepAwake" type="checkbox" checked /> Scherm wakker houden tijdens navigatie</label>
+    <p id="wakeLockSupport" class="settings-note"></p>
 
     <div class="avatar-settings">
       <label>Kies avatar</label>
@@ -122,24 +149,25 @@
       <p class="avatar-help">De foto wordt rond uitgesneden en alleen lokaal in deze browser bewaard.</p>
     </div>
 
-    <p>De API-key wordt alleen lokaal in deze browser opgeslagen. Voor een openbare app hoort deze achter een beveiligde proxy.</p>
+    <p class="settings-note">De API-key wordt lokaal in deze browser opgeslagen. Voor openbaar gebruik hoort de sleutel achter een beveiligde proxy.</p>
     <button id="saveSettings" class="control-button primary full-width">Opslaan</button>
   </section>
 
   <section id="gpxEditorSheet" class="sheet gpx-editor-sheet" hidden>
-    <div class="panel-title-row">
+    <div class="panel-title-row sheet-title-row">
       <div>
         <h2>GPX bewerken</h2>
-        <p class="editor-subtitle">Versleep de genummerde punten op de kaart of verwijder ze uit de lijst.</p>
+        <p class="editor-subtitle">Klik een punt om het te selecteren of gebruik een selectievak voor een groot gebied.</p>
       </div>
       <button id="closeGpxEditor" class="text-button">Sluiten</button>
     </div>
     <div class="gpx-editor-toolbar">
       <button id="boxSelectGpx" class="control-button">▭ Selectievak</button>
       <button id="deleteSelectedGpx" class="control-button danger" disabled>Verwijder selectie</button>
+      <button id="undoGpx" class="control-button" disabled>↶ Ongedaan</button>
       <span id="gpxSelectionCount" class="gpx-selection-count">Geen punten geselecteerd</span>
     </div>
-    <p class="gpx-editor-help">Klik een punt om het te selecteren en te verslepen. Gebruik <strong>Selectievak</strong> en sleep over de kaart om meerdere punten tegelijk te selecteren.</p>
+    <p class="gpx-editor-help">Bij grote GPX-bestanden worden alleen voldoende handgrepen getoond om de kaart snel te houden. Het selectievak controleert wel alle routepunten.</p>
     <div id="gpxPointList" class="gpx-point-list"></div>
     <div class="gpx-editor-actions">
       <button id="restoreGpx" class="control-button">↺ Alles herstellen</button>
@@ -147,41 +175,48 @@
     </div>
   </section>
 
-
   <section id="gpxAnalysisSheet" class="sheet gpx-analysis-sheet" hidden>
-    <div class="panel-title-row">
-      <div><h2>GPX-analyse</h2><p class="editor-subtitle">Losse tracks, tracksegmenten en grote sprongen worden als afzonderlijke trajecten weergegeven.</p></div>
+    <div class="panel-title-row sheet-title-row">
+      <div>
+        <h2>GPX-analyse</h2>
+        <p class="editor-subtitle">Losse tracks, tracksegmenten en grote sprongen krijgen een eigen kleur.</p>
+      </div>
       <button id="closeGpxAnalysis" class="text-button">Sluiten</button>
     </div>
     <p id="gpxAnalysisSummary" class="gpx-analysis-summary"></p>
     <div class="gpx-threshold-control">
       <label for="gpxJumpThreshold">Knip bij verbindingssprong langer dan</label>
-      <div><input id="gpxJumpThreshold" type="number" min="0" step="100" value="5000" /><span>meter</span><button id="rerunGpxAnalysis" class="control-button">Opnieuw analyseren</button></div>
+      <div>
+        <input id="gpxJumpThreshold" type="number" min="0" step="100" value="5000" />
+        <span>meter</span>
+        <button id="rerunGpxAnalysis" class="control-button">Opnieuw analyseren</button>
+      </div>
     </div>
     <div class="gpx-analysis-toolbar">
-      <button id="selectAllGpxSegments" class="control-button">Selecteer alles</button>
-      <button id="clearGpxSegmentSelection" class="control-button">Wis selectie</button>
+      <button id="selectAllGpxSegments" class="compact-button">Alles</button>
+      <button id="clearGpxSegmentSelection" class="compact-button">Geen</button>
       <span id="gpxSegmentSelectionCount" class="gpx-selection-count">Geen trajecten geselecteerd</span>
     </div>
     <div id="gpxAnalysisList" class="gpx-analysis-list"></div>
     <div class="gpx-analysis-actions">
+      <button id="useSelectedGpxSegment" class="control-button" disabled>Gebruik als route</button>
       <button id="exportSelectedGpxSegments" class="control-button primary" disabled>Maak 1 GPX van selectie</button>
-      <button id="exportAllGpxSegments" class="control-button">Exporteer alle trajecten apart</button>
+      <button id="exportAllGpxSegments" class="control-button">Exporteer alles apart</button>
     </div>
   </section>
 
   <section id="fuelSheet" class="sheet fuel-sheet" hidden>
-    <div class="panel-title-row">
+    <div class="panel-title-row sheet-title-row">
       <h2>Tankstation kiezen</h2>
       <button id="closeFuelSheet" class="text-button">Sluiten</button>
     </div>
-    <p class="fuel-intro">Kies een van de drie tankstations die het beste langs de komende route liggen.</p>
+    <p class="fuel-intro">Kies een van de drie tankstations die het beste langs het komende deel van de route liggen.</p>
     <div id="fuelChoices" class="fuel-choices"></div>
   </section>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=21"></script>
+<script src="./app.js?v=22"></script>
 </body>
 </html>

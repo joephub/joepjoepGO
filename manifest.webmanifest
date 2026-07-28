@@ -1,12 +1,14 @@
 {
   "name": "joepjoepGO",
   "short_name": "joepjoepGO",
-  "description": "joepjoepGO: GPS-navigatie met adresroutes en GPX-routes.",
+  "description": "joepjoepGO: GPS-navigatie, GPX-analyse en GPX-bewerking.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "theme_color": "#111827",
-  "background_color": "#111827",
-  "icons": [{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "icons": [
+    {"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
 }
