@@ -4,20 +4,43 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <link rel="manifest" href="./manifest.webmanifest?v=22" />
+  <link rel="manifest" href="./manifest.webmanifest?v=23" />
   <link rel="icon" href="./icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="./styles.css?v=22" />
+  <link rel="stylesheet" href="./styles.css?v=23" />
   <title>joepjoepGO</title>
 </head>
 <body>
 <div id="app" class="app">
   <div id="map" class="map" aria-label="Kaart"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v22</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v23</div>
   <button id="settings" class="floating-button settings-button" title="Instellingen" aria-label="Instellingen">⚙</button>
+  <button id="modeBack" class="floating-button mode-back-button" title="Terug naar startkeuze" aria-label="Terug naar startkeuze" hidden>←</button>
   <button id="layoutToggle" class="floating-button layout-toggle" title="Draai navigatiescherm" aria-label="Draai navigatiescherm" hidden>↻</button>
+  <button id="gpsAlert" class="gps-alert" type="button" hidden>
+    <span class="gps-alert-dot" aria-hidden="true"></span>
+    <span id="gpsAlertText">GPS niet actief</span>
+  </button>
 
-  <header id="plannerCard" class="planner-card">
+  <section id="startChoice" class="start-choice" aria-labelledby="startChoiceTitle">
+    <div class="start-choice-copy">
+      <span class="eyebrow">joepjoepGO</span>
+      <strong id="startChoiceTitle">Hoe wil je beginnen?</strong>
+      <small>Kies één manier. De andere opties verdwijnen daarna uit beeld.</small>
+    </div>
+    <div class="start-choice-actions">
+      <button id="chooseAddressMode" class="start-choice-button address-choice" type="button">
+        <span class="start-choice-icon" aria-hidden="true">⌖</span>
+        <span><strong>Navigeer naar adres</strong><small>Zoek een bestemming en vertrek met GPS.</small></span>
+      </button>
+      <button id="chooseGpxMode" class="start-choice-button gpx-choice" type="button">
+        <span class="start-choice-icon" aria-hidden="true">↗</span>
+        <span><strong>Open een GPX</strong><small>Bekijk, analyseer, bewerk of volg een routebestand.</small></span>
+      </button>
+    </div>
+  </section>
+
+  <header id="plannerCard" class="planner-card" hidden>
     <div class="planner-row planner-row-start">
       <button id="startMode" class="mode-button" title="Wissel tussen GPS en handmatig vertrekpunt">GPS</button>
       <input id="startQuery" placeholder="Vertrekpunt: mijn locatie" autocomplete="off" disabled />
@@ -58,11 +81,7 @@
     </div>
   </aside>
 
-  <nav id="homeActions" class="home-actions" aria-label="Hoofdacties">
-    <button id="gps" class="control-button">Start GPS</button>
-    <button id="gpx" class="control-button">Laad GPX</button>
-    <button id="developer" class="control-button desktop-test-button">Test</button>
-  </nav>
+  <nav id="homeActions" class="home-actions" aria-label="Hoofdacties" hidden></nav>
 
   <section id="routePreview" class="route-preview" hidden>
     <div class="route-preview-header">
@@ -82,7 +101,7 @@
       <button id="analyseGpx" class="compact-button" hidden>Analyse</button>
       <button id="editGpx" class="compact-button" hidden>Bewerk</button>
       <button id="overview" class="compact-button">Overzicht</button>
-      <button id="replaceGpx" class="compact-button">Open GPX</button>
+      <button id="replaceGpx" class="compact-button" hidden>Andere GPX</button>
       <button id="clear" class="compact-button danger">Wis</button>
     </div>
   </section>
@@ -109,7 +128,11 @@
       <small id="routeMeta" hidden></small>
     </div>
     <div id="routeActions" class="route-actions">
-      <button id="fuel" class="route-action fuel-button" title="Tankstation zoeken" aria-label="Tankstation zoeken">⛽</button>
+      <button id="fuel" class="route-action fuel-button" title="Tankstation zoeken" aria-label="Tankstation zoeken">
+        <span class="fuel-icon" aria-hidden="true">⛽</span>
+        <span class="route-action-spinner" aria-hidden="true"></span>
+      </button>
+      <button id="resumeNavigation" class="route-action resume-navigation-button" title="Navigatie hervatten" aria-label="Navigatie hervatten" hidden>▶</button>
       <button id="stopNavigation" class="route-action stop-button" title="Navigatie pauzeren" aria-label="Navigatie pauzeren">✕</button>
     </div>
   </aside>
@@ -217,6 +240,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=22"></script>
+<script src="./app.js?v=23"></script>
 </body>
 </html>

@@ -1,24 +1,24 @@
-# joepjoepGO v21
+# joepjoepGO v23
 
-Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-bewerker.
+Deze versie bundelt verbeteringen aan de startflow en de bediening tijdens navigeren.
 
-## GPX bewerken
-- Klik een routepunt om het te selecteren.
-- Een enkel geselecteerd tussenpunt kan worden versleept.
-- Klik op **Selectievak** en sleep over de kaart om meerdere punten te selecteren.
-- Verwijder de selectie met **Verwijder selectie**.
-- Start- en eindpunt blijven behouden.
-- Exporteer de aangepaste lijn als een nieuw GPX-bestand.
+## Gewijzigd
 
+- De app opent met een keuze tussen **Navigeer naar adres** en **Open een GPX**.
+- De adresplanner en GPX-functies worden niet meer tegelijk getoond.
+- Gewone voortgangsmeldingen worden niet meer als donker/blauw bericht over de kaart getoond. Alleen fouten verschijnen nog tijdelijk in beeld.
+- Een actieve GPS-fix geeft geen permanente melding meer. Alleen wanneer GPS wordt gezocht, uitstaat of niet beschikbaar is, verschijnt bovenin een kleine waarschuwing.
+- Bij de eerste druk op het rode kruis wordt navigatie gepauzeerd. Daarna verschijnen zowel een groene hervatknop als een rood kruis om de navigatie definitief te beëindigen.
+- Definitief stoppen keert terug naar het route-overzicht; de berekende route blijft beschikbaar om opnieuw te starten.
+- De tankstationknop toont tijdens het zoeken een draaiende indicator en kan niet meerdere keren tegelijk worden ingedrukt.
+- Bij een normale adresroute wordt **Andere GPX** niet meer getoond. Die knop verschijnt alleen bij een geladen GPX.
 
-## GPX-analyse
-Na het laden van een GPX kan **Analyseer GPX** worden gekozen. Expliciete tracks/tracksegmenten en abrupte geografische sprongen worden als aparte gekleurde trajecten getoond. Elk traject is afzonderlijk als GPX te exporteren.
+## Publiceren op GitHub Pages
 
+1. Pak de ZIP uit.
+2. Upload alle bestanden naar de hoofdmap van de GitHub-repository en vervang de bestaande bestanden.
+3. Commit de wijzigingen.
+4. Open de site met `?v=23`, bijvoorbeeld `https://joephub.github.io/maps/?v=23`.
+5. Controleer linksonder of **joepjoepGO v23** staat.
 
-Nieuw in v21: compact analysepaneel, kaart blijft bedienbaar, trajecten aanvinken en als één GPX met meerdere tracksegmenten exporteren.
-
-Nieuw in v21:
-- Wis verwijdert nu de volledige geladen GPX, analysekleuren, bewerkpunten, markers en invoergegevens.
-- Een nieuw GPX-bestand vervangt automatisch het eerder geladen bestand.
-- In Instellingen kan een auto-, motor- of scooteravatar worden gekozen.
-- Een eigen foto of selfie kan lokaal als ronde navigatieavatar worden ingesteld.
+De service worker is tijdens de ontwikkelfase bewust uitgeschakeld om oude versies uit de browsercache te voorkomen.

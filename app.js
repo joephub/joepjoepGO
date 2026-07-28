@@ -2,7 +2,7 @@
   'use strict';
 
   const APP_NAME = 'joepjoepGO';
-  const APP_VERSION = '22';
+  const APP_VERSION = '23';
   const $ = (id) => document.getElementById(id);
   const KEY = 'joepjoepgo-settings-v1';
   const LEGACY_KEY = 'routerijder-settings';
@@ -24,6 +24,7 @@
     avatar: saved.avatar || 'motor',
     customAvatar: saved.customAvatar || '',
     wakeLock: null,
+    entryMode: null,
     startMode: 'gps',
     startPoint: null,
     startLabel: 'Mijn locatie',
@@ -34,6 +35,10 @@
     original: [],
     mode: 'idle',
     watchId: null,
+    gpsStatus: 'idle',
+    gpsError: '',
+    gpsLastFixAt: 0,
+    gpsWatchdog: null,
     marker: null,
     startMarker: null,
     destinationMarker: null,
@@ -54,6 +59,9 @@
     rotationFallback: false,
     layoutManual: false,
     fuelCandidates: [],
+    fuelLoading: false,
+    fuelSearchToken: 0,
+    fuelAbortController: null,
     statusTimer: null,
     gpxLoadToken: 0,
     gpxDocument: null,
@@ -68,16 +76,21 @@
 
   function status(text, options = {}) {
     const element = $('status');
-    if (!element) return;
     const settings = typeof options === 'number' ? { duration: options } : options;
-    const duration = Number.isFinite(settings.duration) ? settings.duration : 3600;
+    const shouldShow = settings.error === true || settings.force === true;
+    if (!element) return;
     window.clearTimeout(state.statusTimer);
-    element.classList.toggle('is-error', settings.error === true);
     if (!text) {
       element.hidden = true;
       element.textContent = '';
       return;
     }
+    if (!shouldShow) {
+      console.debug(`${APP_NAME}: ${text}`);
+      return;
+    }
+    const duration = Number.isFinite(settings.duration) ? settings.duration : 5200;
+    element.classList.toggle('is-error', settings.error === true);
     element.textContent = text;
     element.hidden = false;
     if (duration > 0) state.statusTimer = window.setTimeout(() => { element.hidden = true; }, duration);
@@ -118,6 +131,88 @@
     return !isDesktop() && (window.matchMedia('(pointer: coarse)').matches || Math.min(window.innerWidth, window.innerHeight) < 900);
   }
 
+  function renderGpsIndicator() {
+    const indicator = $('gpsAlert');
+    if (!indicator) return;
+    const needsGps = (state.entryMode === 'address' && state.startMode === 'gps')
+      || state.pendingNavigationStart
+      || (state.navigationActive && state.navigationSource === 'gps');
+    const hasIssue = state.gpsStatus !== 'active';
+    indicator.hidden = !needsGps || !hasIssue;
+    if (indicator.hidden) return;
+    const label = state.gpsStatus === 'searching'
+      ? 'GPS zoeken…'
+      : state.gpsStatus === 'error'
+        ? 'GPS niet actief'
+        : 'GPS uit';
+    if ($('gpsAlertText')) $('gpsAlertText').textContent = label;
+    indicator.title = state.gpsError || 'Tik om GPS opnieuw te starten';
+    indicator.classList.toggle('is-searching', state.gpsStatus === 'searching');
+    indicator.classList.toggle('is-error', state.gpsStatus === 'error');
+  }
+
+  function setFuelLoading(active) {
+    state.fuelLoading = Boolean(active);
+    const button = $('fuel');
+    if (!button) return;
+    button.disabled = state.fuelLoading || state.navigationPaused;
+    button.classList.toggle('is-loading', state.fuelLoading);
+    button.setAttribute('aria-busy', state.fuelLoading ? 'true' : 'false');
+    button.title = state.fuelLoading ? 'Tankstations zoeken…' : 'Tankstation zoeken';
+  }
+
+  function cancelFuelSearch() {
+    state.fuelSearchToken += 1;
+    try { state.fuelAbortController?.abort(); } catch (_) {}
+    state.fuelAbortController = null;
+    setFuelLoading(false);
+  }
+
+  function setStartMode(mode, options = {}) {
+    state.startMode = mode === 'manual' ? 'manual' : 'gps';
+    const manual = state.startMode === 'manual';
+    if ($('startMode')) {
+      $('startMode').textContent = manual ? 'Hand' : 'GPS';
+      $('startMode').classList.toggle('manual', manual);
+    }
+    if ($('startQuery')) {
+      $('startQuery').disabled = !manual;
+      $('startQuery').placeholder = manual ? 'Vul een vertrekadres in' : 'Vertrekpunt: mijn locatie';
+      if (!manual) $('startQuery').value = state.current ? 'Mijn huidige locatie' : '';
+    }
+    if (!manual && options.startGps !== false && state.watchId === null) startGpsWatch();
+    renderGpsIndicator();
+  }
+
+  function chooseAddressMode() {
+    state.entryMode = 'address';
+    if (isDesktop()) setStartMode('manual', { startGps: false });
+    else setStartMode(state.startMode, { startGps: true });
+    renderUi();
+    window.setTimeout(() => $('destinationQuery')?.focus(), 80);
+  }
+
+  function chooseGpxMode() {
+    $('gpxFile')?.click();
+  }
+
+  function returnToModeChoice() {
+    stopGpsWatch({ preservePosition: true });
+    state.entryMode = null;
+    state.startPoint = null;
+    state.destinationPoint = null;
+    state.destinationLabel = '';
+    state.pickingStart = false;
+    state.pickingDestination = false;
+    map.getCanvas()?.classList.remove('map-pick-mode');
+    if (state.startMarker) { state.startMarker.remove(); state.startMarker = null; }
+    if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
+    if ($('startQuery')) $('startQuery').value = '';
+    if ($('destinationQuery')) $('destinationQuery').value = '';
+    if ($('searchResults')) $('searchResults').hidden = true;
+    renderUi();
+  }
+
   function persistSettings() {
     const payload = {
       apiKey: state.apiKey,
@@ -139,7 +234,7 @@
 
   async function requestWakeLock() {
     if (!state.keepAwake || !state.navigationActive || state.navigationPaused || document.visibilityState !== 'visible') return;
-    if (!('wakeLock' in navigator)) return;
+    if (!navigator.wakeLock || typeof navigator.wakeLock.request !== 'function') return;
     try {
       if (state.wakeLock && !state.wakeLock.released) return;
       state.wakeLock = await navigator.wakeLock.request('screen');
@@ -286,13 +381,19 @@
     const hasRoute = Boolean(state.route && state.route.coordinates?.length >= 2);
     const hasGpx = Boolean(state.gpxDocument);
     const navigation = state.navigationActive;
+    const choosing = !navigation && !hasRoute && !hasGpx && !state.entryMode;
+    const planningAddress = !navigation && !hasRoute && !hasGpx && state.entryMode === 'address';
 
     document.body.classList.toggle('navigation-active', navigation);
+    document.body.classList.toggle('navigation-paused', navigation && state.navigationPaused);
     document.body.classList.toggle('gpx-loaded', hasGpx);
     document.body.classList.toggle('route-ready', hasRoute);
+    document.body.classList.toggle('choosing-mode', choosing);
 
-    if ($('plannerCard')) $('plannerCard').hidden = navigation || hasGpx;
-    if ($('homeActions')) $('homeActions').hidden = navigation || hasRoute || hasGpx;
+    if ($('startChoice')) $('startChoice').hidden = !choosing;
+    if ($('plannerCard')) $('plannerCard').hidden = !planningAddress;
+    if ($('homeActions')) $('homeActions').hidden = true;
+    if ($('modeBack')) $('modeBack').hidden = !planningAddress;
     if ($('settings')) $('settings').hidden = navigation;
     if ($('navigationPanel')) $('navigationPanel').hidden = !navigation;
     if ($('routePreview')) $('routePreview').hidden = navigation || (!hasRoute && !hasGpx);
@@ -300,11 +401,14 @@
 
     if ($('analyseGpx')) $('analyseGpx').hidden = !hasGpx;
     if ($('editGpx')) $('editGpx').hidden = !(hasRoute && state.mode === 'gpx');
+    if ($('replaceGpx')) $('replaceGpx').hidden = !hasGpx;
     if ($('startNavigation')) {
       $('startNavigation').disabled = !hasRoute;
       $('startNavigation').title = hasRoute ? 'Start navigatie' : 'Kies eerst één GPX-traject';
     }
 
+    renderGpsIndicator();
+    updatePauseButton();
     renderRoutePreview();
     applyLayoutMode();
     if (state.mapReady) window.requestAnimationFrame(() => map.resize());
@@ -550,7 +654,7 @@
     } else if (state.gpxDocument?.parts?.length) {
       bounds = partsBounds(state.gpxDocument.parts);
     }
-    if (!bounds) return status('Er is nog geen route om te tonen.');
+    if (!bounds) return status('Er is nog geen route om te tonen.', { error: true });
     map.fitBounds(bounds, { padding: mapPaddingForOverview(), duration: 550, maxZoom: 16, bearing: 0, pitch: 0 });
     state.follow = false;
     status('Route-overzicht');
@@ -563,7 +667,7 @@
       if (!state.startPoint) throw new Error('Kies eerst een handmatig vertrekpunt.');
       return state.startPoint;
     }
-    if (!state.current) throw new Error('Start GPS en wacht op je locatie, of kies Handmatig.');
+    if (!state.current || state.gpsStatus !== 'active') throw new Error('Wacht tot GPS actief is, of kies Handmatig.');
     return state.current;
   }
 
@@ -584,6 +688,7 @@
       clearGpxPreview();
       setMarker('start', start);
       setMarker('destination', state.destinationPoint);
+      state.entryMode = 'address';
       drawRoute(data, 'address');
       status(`Route klaar: ${fmtDistance(data.distance)}`);
     } catch (error) {
@@ -631,14 +736,9 @@
   }
 
   function toggleStartMode() {
-    state.startMode = state.startMode === 'gps' ? 'manual' : 'gps';
-    const manual = state.startMode === 'manual';
-    $('startMode').textContent = manual ? 'Hand' : 'GPS';
-    $('startMode').classList.toggle('manual', manual);
-    $('startQuery').disabled = !manual;
-    $('startQuery').placeholder = manual ? 'Vul een vertrekadres in' : 'Vertrekpunt: mijn locatie';
-    if (!manual) $('startQuery').value = state.current ? 'Mijn huidige locatie' : '';
-    status(manual ? 'Handmatig vertrekpunt actief' : 'GPS als vertrekpunt actief');
+    const nextMode = state.startMode === 'gps' ? 'manual' : 'gps';
+    if (nextMode === 'manual' && !state.navigationActive) stopGpsWatch({ preservePosition: true });
+    setStartMode(nextMode, { startGps: nextMode === 'gps' });
   }
 
   function requestMapPoint(target) {
@@ -684,69 +784,106 @@
     return `GPS-fout: ${error.message}`;
   }
 
-  function toggleGps() {
-    if (state.watchId !== null) {
-      navigator.geolocation.clearWatch(state.watchId);
-      state.watchId = null;
-      state.pendingNavigationStart = false;
-      $('gps').classList.remove('active');
-      $('gps').textContent = 'Start GPS';
-      if (state.navigationActive && state.navigationSource === 'gps') {
-        state.navigationPaused = true;
-        updatePauseButton();
-        releaseWakeLock();
+  function clearGpsWatchdog() {
+    if (state.gpsWatchdog) window.clearTimeout(state.gpsWatchdog);
+    state.gpsWatchdog = null;
+  }
+
+  function scheduleGpsWatchdog() {
+    clearGpsWatchdog();
+    state.gpsWatchdog = window.setTimeout(() => {
+      if (state.watchId !== null && Date.now() - state.gpsLastFixAt > 18000) {
+        state.gpsStatus = 'error';
+        state.gpsError = 'Geen recente GPS-positie ontvangen.';
+        renderGpsIndicator();
       }
-      status('GPS gepauzeerd');
+    }, 19000);
+  }
+
+  function stopGpsWatch(options = {}) {
+    if (state.watchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.watchId);
+    }
+    state.watchId = null;
+    state.pendingNavigationStart = false;
+    state.gpsStatus = 'idle';
+    state.gpsError = '';
+    clearGpsWatchdog();
+    if (options.preservePosition === false) {
+      state.current = null;
+      if (state.marker) { state.marker.remove(); state.marker = null; }
+    }
+    renderGpsIndicator();
+  }
+
+  function startGpsWatch() {
+    if (state.watchId !== null) return;
+    if (!navigator.geolocation) {
+      state.gpsStatus = 'error';
+      state.gpsError = 'Deze browser ondersteunt geen locatiebepaling.';
+      renderGpsIndicator();
+      status(state.gpsError, { error: true });
       return;
     }
-    if (!navigator.geolocation) return status('Deze browser ondersteunt geen locatiebepaling.', { error: true });
-    $('gps').textContent = 'Zoeken…';
-    status('Locatie zoeken…', { duration: 0 });
+    state.gpsStatus = 'searching';
+    state.gpsError = '';
+    renderGpsIndicator();
     state.watchId = navigator.geolocation.watchPosition(
       pos => {
         const point = [pos.coords.longitude, pos.coords.latitude];
+        state.gpsStatus = 'active';
+        state.gpsError = '';
+        state.gpsLastFixAt = Date.now();
+        scheduleGpsWatchdog();
         setCurrentPosition(point, { source: 'Echte GPS', speedMps: pos.coords.speed || 0, heading: pos.coords.heading });
-        $('gps').classList.add('active');
-        $('gps').textContent = 'GPS actief';
         if (state.startMode === 'gps') {
           state.startPoint = point;
           state.startLabel = 'Mijn huidige locatie';
-          $('startQuery').value = 'Mijn huidige locatie';
+          if ($('startQuery')) $('startQuery').value = 'Mijn huidige locatie';
         }
         if (state.pendingNavigationStart && state.route) {
           state.pendingNavigationStart = false;
           beginGpsNavigation();
         }
-        status(`GPS actief · nauwkeurigheid ${Math.round(pos.coords.accuracy)} m`);
+        renderGpsIndicator();
       },
       error => {
         state.pendingNavigationStart = false;
-        status(gpsErrorMessage(error), { error: true, duration: 7000 });
-        $('gps').classList.remove('active');
-        $('gps').textContent = 'Start GPS';
+        state.gpsStatus = 'error';
+        state.gpsError = gpsErrorMessage(error);
         if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
         state.watchId = null;
+        clearGpsWatchdog();
+        renderGpsIndicator();
+        status(state.gpsError, { error: true, duration: 7000 });
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
     );
   }
 
+  function toggleGps() {
+    if (state.watchId === null) startGpsWatch();
+    else stopGpsWatch({ preservePosition: true });
+  }
+
 
 
   function updatePauseButton() {
-    const button = $('stopNavigation');
-    if (!button) return;
+    const stopButton = $('stopNavigation');
+    const resumeButton = $('resumeNavigation');
+    if (!stopButton) return;
+    stopButton.textContent = '✕';
+    stopButton.classList.remove('resume-button');
     if (state.navigationPaused) {
-      button.textContent = '▶';
-      button.title = 'Navigatie hervatten';
-      button.setAttribute('aria-label', 'Navigatie hervatten');
-      button.classList.add('resume-button');
+      stopButton.title = 'Navigatie definitief stoppen';
+      stopButton.setAttribute('aria-label', 'Navigatie definitief stoppen');
+      if (resumeButton) resumeButton.hidden = false;
     } else {
-      button.textContent = '✕';
-      button.title = 'Navigatie pauzeren';
-      button.setAttribute('aria-label', 'Navigatie pauzeren');
-      button.classList.remove('resume-button');
+      stopButton.title = 'Navigatie pauzeren';
+      stopButton.setAttribute('aria-label', 'Navigatie pauzeren');
+      if (resumeButton) resumeButton.hidden = true;
     }
+    setFuelLoading(state.fuelLoading);
   }
 
   function beginGpsNavigation() {
@@ -764,17 +901,17 @@
     if (!state.route || state.route.coordinates.length < 2) {
       return status('Analyseer de GPX en kies eerst één traject.', { error: true });
     }
-    if (state.current) {
+    if (isDesktop()) {
+      if ($('developerPanel')) $('developerPanel').hidden = false;
+      return;
+    }
+    if (state.watchId !== null && state.current && state.gpsStatus === 'active') {
       beginGpsNavigation();
       return;
     }
-    if (isDesktop()) {
-      if ($('developerPanel')) $('developerPanel').hidden = false;
-      return status('Gebruik op desktop de testmodus om de route te simuleren.', { duration: 6000 });
-    }
     state.pendingNavigationStart = true;
-    if (state.watchId === null) toggleGps();
-    status('GPS wordt gestart. De navigatie begint zodra je locatie bekend is.', { duration: 0 });
+    startGpsWatch();
+    renderGpsIndicator();
   }
 
   function updateNavigation(point, speedMps, heading, knownProgressKm) {
@@ -933,7 +1070,7 @@
       } catch (_) {}
     }
     routes.sort((a,b) => a.score - b.score);
-    if (!routes[0]) return status('Geen geschikte aansluiting gevonden.');
+    if (!routes[0]) return status('Geen geschikte aansluiting gevonden.', { error: true });
     setLineSource('rejoin-casing', routes[0].route.coordinates);
     setLineSource('rejoin-route', routes[0].route.coordinates);
     status(`Aansluitroute: ${fmtDistance(routes[0].route.distance)}`);
@@ -1117,7 +1254,7 @@
   }
 
   function rerunGpxAnalysis() {
-    if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.');
+    if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.', { error: true });
     try {
       state.gpxAnalysis.jumpThresholdMeters = readGpxJumpThreshold();
     } catch (error) {
@@ -1146,7 +1283,7 @@
   }
 
   function openGpxAnalysis() {
-    if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.');
+    if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.', { error: true });
     closeGpxEditor();
     state.gpxAnalysis.active = true;
     $('gpxAnalysisSheet').hidden = false;
@@ -1207,7 +1344,7 @@
 
   function exportSelectedGpxSegments() {
     const selected = state.gpxAnalysis.segments.filter(segment => state.gpxAnalysis.selectedIds.has(segment.id));
-    if (!selected.length) return status('Selecteer eerst minimaal één traject.');
+    if (!selected.length) return status('Selecteer eerst minimaal één traject.', { error: true });
     const base = state.gpxEditor.fileName.replace(/\.gpx$/i,'') || 'route';
     downloadText(selectedGpxXml(selected), `${base}-selectie-${selected.length}-trajecten.gpx`);
     status(`${selected.length} traject${selected.length === 1 ? '' : 'en'} samengevoegd in één GPX.`);
@@ -1312,7 +1449,7 @@
 
   function undoGpx() {
     const snapshot = state.gpxEditor.history.pop();
-    if (!snapshot) return status('Er is niets om ongedaan te maken.');
+    if (!snapshot) return status('Er is niets om ongedaan te maken.', { error: true });
     state.gpxEditor.editCoordinates = snapshot.map(point => [...point]);
     state.gpxEditor.selectedIndices.clear();
     removeSelectedMarker();
@@ -1393,7 +1530,7 @@
   function deleteGpxIndices(indices) {
     const last = state.gpxEditor.editCoordinates.length - 1;
     const removable = [...new Set(indices)].filter(index => index > 0 && index < last).sort((a,b) => b-a);
-    if (!removable.length) return status('Het start- en eindpunt blijven altijd behouden.');
+    if (!removable.length) return status('Het start- en eindpunt blijven altijd behouden.', { error: true });
     pushGpxHistory();
     removable.forEach(index => state.gpxEditor.editCoordinates.splice(index, 1));
     state.gpxEditor.selectedIndices.clear();
@@ -1552,7 +1689,7 @@
 
   function exportGpx() {
     const coordinates = state.gpxEditor.editCoordinates;
-    if (coordinates.length < 2) return status('Er zijn onvoldoende punten om te exporteren.');
+    if (coordinates.length < 2) return status('Er zijn onvoldoende punten om te exporteren.', { error: true });
     const trackPoints = coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="${APP_NAME} v${APP_VERSION}" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
     downloadText(xml, `${state.gpxEditor.fileName.replace(/\.gpx$/i,'') || 'route'}-bewerkt.gpx`);
@@ -1566,7 +1703,9 @@
     if (!file) return;
     const loadToken = state.gpxLoadToken + 1;
     state.gpxLoadToken = loadToken;
-    clearRoute({ silent: true, preserveGps: true, keepLoadToken: true });
+    clearRoute({ silent: true, preserveGps: false, keepLoadToken: true });
+    state.entryMode = 'gpx';
+    renderUi();
     try {
       status('GPX-bestand lezen…', { duration: 0 });
       const fileText = await file.text();
@@ -1620,7 +1759,7 @@
       }
     } catch (error) {
       if (loadToken === state.gpxLoadToken) {
-        clearRoute({ silent: true, preserveGps: true, keepLoadToken: true });
+        clearRoute({ silent: true, preserveGps: false, keepLoadToken: true });
         status(error.message, { error: true, duration: 7000 });
       }
     } finally {
@@ -1732,10 +1871,12 @@
   }
 
   async function chooseFuelStop(station) {
+    const operationToken = ++state.fuelSearchToken;
+    setFuelLoading(true);
     try {
       closeFuelSheet();
-      status(`${station.name} als tussenstop toevoegen…`, { duration: 0 });
       const activeRoute = state.route;
+      if (!activeRoute || !state.navigationActive) throw new Error('De navigatie is niet meer actief.');
       const destination = state.destinationPoint || activeRoute.coordinates[activeRoute.coordinates.length - 1];
       const start = state.current || turf.along(turf.lineString(activeRoute.coordinates), state.progressKm, { units: 'kilometers' }).geometry.coordinates;
       let dataRoute;
@@ -1766,6 +1907,7 @@
         state.gpxDocument = null;
       }
 
+      if (operationToken !== state.fuelSearchToken || !state.navigationActive) return;
       state.fuelStop = station;
       state.destinationPoint = destination;
       state.destinationLabel = state.destinationLabel || 'Bestemming';
@@ -1776,17 +1918,19 @@
       state.navigationSource = state.navigationSource || 'gps';
       setNavigationMode(true);
       updatePauseButton();
-      status(`${station.name} is als tussenstop toegevoegd.`);
     } catch (error) {
-      status(error.message, { error: true, duration: 6500 });
+      if (operationToken === state.fuelSearchToken) status(error.message, { error: true, duration: 6500 });
+    } finally {
+      if (operationToken === state.fuelSearchToken) setFuelLoading(false);
     }
   }
 
-
   async function addNearestFuelStop() {
+    if (state.fuelLoading) return;
+    const operationToken = ++state.fuelSearchToken;
+    setFuelLoading(true);
     try {
-      if (!state.route || !state.current) throw new Error('Start eerst de navigatie of simulatie.');
-      status('Tankstations langs de komende route zoeken…', { duration: 0 });
+      if (!state.route || !state.current || !state.navigationActive) throw new Error('Start eerst de navigatie of simulatie.');
       const line = turf.lineString(state.route.coordinates);
       const total = turf.length(line, { units: 'kilometers' });
       const searchStart = Math.min(total, state.progressKm + 0.4);
@@ -1802,7 +1946,9 @@
       const endpoints = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
       let data = null;
       for (const endpoint of endpoints) {
+        if (operationToken !== state.fuelSearchToken) return;
         const controller = new AbortController();
+        state.fuelAbortController = controller;
         const timer = window.setTimeout(() => controller.abort(), 12000);
         try {
           const response = await fetch(endpoint, {
@@ -1819,8 +1965,10 @@
           // Probeer de volgende Overpass-server.
         } finally {
           window.clearTimeout(timer);
+          if (state.fuelAbortController === controller) state.fuelAbortController = null;
         }
       }
+      if (operationToken !== state.fuelSearchToken || !state.navigationActive) return;
       if (!data) throw new Error('Tankstations zoeken is tijdelijk niet beschikbaar.');
 
       const dedupe = new Map();
@@ -1843,25 +1991,27 @@
       renderFuelChoices(candidates);
       $('fuelSheet').hidden = false;
       $('backdrop').hidden = false;
-      status('Kies een tankstation');
     } catch (error) {
-      status(error.message, { error: true, duration: 6500 });
+      if (operationToken === state.fuelSearchToken) status(error.message, { error: true, duration: 6500 });
+    } finally {
+      if (operationToken === state.fuelSearchToken) setFuelLoading(false);
     }
   }
 
 
-  function stopNavigation() {
-    if (!state.navigationActive) return;
-    if (!state.navigationPaused) {
-      state.navigationPaused = true;
-      state.follow = false;
-      if (state.simulation.playing) stopSimulationTimer();
-      releaseWakeLock();
-      updatePauseButton();
-      status('Navigatie gepauzeerd');
-      return;
-    }
 
+  function pauseNavigation() {
+    if (!state.navigationActive || state.navigationPaused) return;
+    state.navigationPaused = true;
+    state.follow = false;
+    if (state.simulation.playing) stopSimulationTimer();
+    releaseWakeLock();
+    updatePauseButton();
+    renderUi();
+  }
+
+  function resumeNavigation() {
+    if (!state.navigationActive || !state.navigationPaused) return;
     state.navigationPaused = false;
     state.follow = true;
     updatePauseButton();
@@ -1869,15 +2019,37 @@
     if (state.navigationSource === 'simulation') {
       toggleSimulation();
     } else {
+      if (state.watchId === null) startGpsWatch();
       if (state.current) updateNavigation(state.current, 0, null);
-      status('Navigatie hervat');
+      renderUi();
     }
   }
 
+  function finishNavigation() {
+    if (!state.navigationActive) return;
+    const source = state.navigationSource;
+    cancelFuelSearch();
+    closeFuelSheet();
+    stopSimulationTimer();
+    state.navigationPaused = false;
+    state.navigationSource = null;
+    state.pendingNavigationStart = false;
+    state.follow = false;
+    if (source === 'gps') stopGpsWatch({ preservePosition: true });
+    setNavigationMode(false);
+    updatePauseButton();
+    if (state.route) showOverview();
+  }
+
+  function stopNavigation() {
+    if (!state.navigationActive) return;
+    if (!state.navigationPaused) pauseNavigation();
+    else finishNavigation();
+  }
 
 
   function toggleSimulation() {
-    if (!state.route || state.route.coordinates.length < 2) return status('Bereken, laad of selecteer eerst een route.');
+    if (!state.route || state.route.coordinates.length < 2) return status('Bereken, laad of selecteer eerst een route.', { error: true });
     if (state.simulation.playing) return pauseSimulation();
 
     const line = turf.lineString(state.route.coordinates);
@@ -1972,9 +2144,10 @@
 
 
   function clearRoute(options = {}) {
-    const { silent = false, preserveGps = true, keepLoadToken = false } = options || {};
+    const { silent = false, preserveGps = false, keepLoadToken = false } = options || {};
     if (!keepLoadToken) state.gpxLoadToken += 1;
     stopSimulationTimer();
+    cancelFuelSearch();
     releaseWakeLock();
     state.pendingNavigationStart = false;
     state.navigationSource = null;
@@ -1990,9 +2163,11 @@
     if (screen.orientation && typeof screen.orientation.unlock === 'function') {
       try { screen.orientation.unlock(); } catch (_) {}
     }
+    if (!preserveGps) stopGpsWatch({ preservePosition: true });
     state.route = null;
     state.original = [];
     state.mode = 'idle';
+    state.entryMode = null;
     state.progressKm = 0;
     state.simulation.distanceKm = 0;
     state.offCount = 0;
@@ -2062,7 +2237,7 @@
   async function processAvatarFile(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) return status('Kies een geldig afbeeldingsbestand.');
+    if (!file.type.startsWith('image/')) return status('Kies een geldig afbeeldingsbestand.', { error: true });
     try {
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -2089,7 +2264,7 @@
       chooseAvatar('custom');
       status('Foto ingesteld als avatar. Klik Opslaan om te bewaren.');
     } catch (_) {
-      status('De foto kon niet worden verwerkt.');
+      status('De foto kon niet worden verwerkt.', { error: true });
     } finally {
       event.target.value = '';
     }
@@ -2133,13 +2308,15 @@
     element.addEventListener(eventName, handler);
   }
 
+  bind('chooseAddressMode', 'click', chooseAddressMode);
+  bind('chooseGpxMode', 'click', chooseGpxMode);
+  bind('modeBack', 'click', returnToModeChoice);
+  bind('gpsAlert', 'click', startGpsWatch);
   bind('startMode', 'click', toggleStartMode);
   bind('useMapStart', 'click', requestMapStart);
   bind('useMapDestination', 'click', () => requestMapPoint('destination'));
   bind('planRoute', 'click', planRoute);
-  bind('gps', 'click', toggleGps);
-  bind('gpx', 'click', () => $('gpxFile')?.click());
-  bind('replaceGpx', 'click', () => $('gpxFile')?.click());
+  bind('replaceGpx', 'click', chooseGpxMode);
   bind('gpxFile', 'change', loadGpx);
   bind('editGpx', 'click', openGpxEditor);
   bind('analyseGpx', 'click', openGpxAnalysis);
@@ -2163,8 +2340,8 @@
   bind('fuel', 'click', addNearestFuelStop);
   bind('layoutToggle', 'click', toggleLayoutMode);
   bind('closeFuelSheet', 'click', closeFuelSheet);
+  bind('resumeNavigation', 'click', resumeNavigation);
   bind('stopNavigation', 'click', stopNavigation);
-  bind('developer', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = !panel.hidden; });
   bind('closeDeveloper', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = true; });
   bind('simPlay', 'click', toggleSimulation);
   bind('simReset', 'click', resetSimulation);
@@ -2178,8 +2355,8 @@
   bind('avatarFile', 'change', processAvatarFile);
   bind('destinationQuery', 'input', () => { state.destinationPoint = null; });
   bind('startQuery', 'input', () => { state.startPoint = null; });
-  bind('destinationQuery', 'keydown', async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message); } } });
-  bind('startQuery', 'keydown', async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message); } } });
+  bind('destinationQuery', 'keydown', async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message, { error: true }); } } });
+  bind('startQuery', 'keydown', async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message, { error: true }); } } });
 
   map.on('click', 'gpx-analysis-lines', event => {
     if (!state.gpxAnalysis.active) return;
