@@ -13,7 +13,7 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v15</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v16</div>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
   <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
 
@@ -60,11 +60,19 @@
 
   <section class="bottom-panel">
     <div id="routeSummary" class="instruction-card" hidden>
-      <div class="maneuver-icon" id="maneuverIcon">↑</div>
-      <div>
-        <strong id="instruction">Geen actieve route</strong>
-        <small id="routeMeta">Kies een vertrekpunt en bestemming</small>
+      <div class="nav-main-field">
+        <div class="maneuver-icon" id="maneuverIcon">↑</div>
+        <strong id="instruction">Volg de route</strong>
       </div>
+      <div class="nav-stat-field">
+        <span class="nav-stat-label">Afstand</span>
+        <strong id="remainingDistance">-</strong>
+      </div>
+      <div class="nav-stat-field">
+        <span class="nav-stat-label">Tijd</span>
+        <strong id="remainingTime">-</strong>
+      </div>
+      <small id="routeMeta" hidden></small>
     </div>
     <div class="controls">
       <button id="gps" class="control-button">Start GPS</button>
@@ -76,7 +84,7 @@
     </div>
     <div id="routeActions" class="route-actions" hidden>
       <button id="fuel" class="route-action fuel-button" title="Tankstation zoeken" aria-label="Tankstation zoeken">⛽</button>
-      <button id="stopNavigation" class="route-action stop-button">Stop navigatie</button>
+      <button id="stopNavigation" class="route-action stop-button" title="Navigatie stoppen" aria-label="Navigatie stoppen">✕</button>
     </div>
   </section>
 
@@ -129,6 +137,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=15"></script>
+<script src="./app.js?v=16"></script>
 </body>
 </html>

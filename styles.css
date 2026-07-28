@@ -296,7 +296,7 @@ body.navigation-active #routeSummary { display: grid !important; }
 body:not(.navigation-active) .route-actions,
 body:not(.navigation-active) .layout-toggle { display: none !important; }
 
-/* v14: GPX-bewerker */
+/* v15: GPX-bewerker */
 .gpx-editor-sheet { z-index: 31; }
 .editor-subtitle { margin: 4px 0 0 !important; font-size: 13px; }
 .gpx-point-list { display: grid; gap: 8px; margin: 15px 0; max-height: 42vh; overflow-y: auto; }
@@ -313,4 +313,115 @@ body.gpx-editing .gpx-editor-sheet, body.gpx-editing .sheet-backdrop { opacity: 
 @media (max-width: 620px) {
   .controls:has(#editGpx:not([hidden])) { grid-template-columns: repeat(3,1fr); }
   .gpx-editor-actions { grid-template-columns: 1fr; }
+}
+
+/* v16: desktop nooit softwarematig roteren, compact navigatiepaneel en echte stop/hervatknop. */
+@media (pointer: fine) and (min-width: 821px) {
+  body.force-rotate-cw .app,
+  body.force-rotate-ccw .app {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    transform: none;
+  }
+}
+
+.navigation-active .instruction-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(92px, .65fr) minmax(78px, .55fr);
+  gap: 8px;
+  background: transparent;
+  color: #0f172a;
+  padding: 0;
+}
+.nav-main-field,
+.nav-stat-field {
+  min-width: 0;
+  border-radius: 14px;
+  background: #0f172a;
+  color: #fff;
+  padding: 10px 12px;
+}
+.nav-main-field {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.nav-main-field .maneuver-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 24px;
+}
+.nav-main-field > strong {
+  min-width: 0;
+  font-size: clamp(16px, 3vw, 23px) !important;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.nav-stat-field {
+  display: grid;
+  align-content: center;
+  text-align: center;
+}
+.nav-stat-label {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.nav-stat-field strong {
+  margin-top: 2px;
+  font-size: clamp(15px, 2.8vw, 21px) !important;
+  line-height: 1.05;
+}
+.navigation-active.layout-landscape .instruction-card {
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "main main"
+    "distance time";
+}
+.navigation-active.layout-landscape .nav-main-field { grid-area: main; }
+.navigation-active.layout-landscape .nav-stat-field:nth-of-type(2) { grid-area: distance; }
+.navigation-active.layout-landscape .nav-stat-field:nth-of-type(3) { grid-area: time; }
+.navigation-active.layout-landscape .nav-main-field > strong { font-size: 17px !important; }
+.navigation-active.layout-landscape .nav-stat-field strong { font-size: 17px !important; }
+.navigation-active.layout-landscape .bottom-panel {
+  gap: 7px;
+  padding: 10px;
+}
+.navigation-active .route-actions {
+  grid-template-columns: 48px 48px;
+  justify-content: start;
+}
+.navigation-active .route-action {
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 21px;
+}
+.navigation-active .stop-button {
+  background: #dc2626;
+  color: white;
+}
+.navigation-active .stop-button.resume-button {
+  background: #22c55e;
+  color: #052e16;
+}
+
+@media (max-width: 560px) and (orientation: portrait) {
+  .navigation-active .instruction-card {
+    grid-template-columns: minmax(0, 1.6fr) minmax(72px, .55fr) minmax(65px, .5fr);
+    gap: 5px;
+  }
+  .nav-main-field, .nav-stat-field { padding: 8px; border-radius: 12px; }
+  .nav-main-field { grid-template-columns: 36px minmax(0,1fr); gap: 7px; }
+  .nav-main-field .maneuver-icon { width: 34px; height: 34px; font-size: 20px; }
+  .nav-main-field > strong { font-size: 14px !important; }
+  .nav-stat-field strong { font-size: 14px !important; }
 }

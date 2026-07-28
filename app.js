@@ -28,6 +28,8 @@
     pickingStart: false,
     pickingDestination: false,
     navigationActive: false,
+    navigationPaused: false,
+    navigationSource: null,
     fuelStop: null,
     follow: false,
     simulation: { timer: null, playing: false, distanceKm: 0, speedFactor: 5, lastTime: 0 },
@@ -51,6 +53,16 @@
     const minutes = Math.max(1, Math.round(ms / 60000));
     return minutes >= 60 ? `${Math.floor(minutes / 60)} u ${minutes % 60} min` : `${minutes} min`;
   };
+
+  function setRemaining(distanceText, timeText) {
+    if ($('remainingDistance')) $('remainingDistance').textContent = distanceText || '-';
+    if ($('remainingTime')) $('remainingTime').textContent = timeText || '-';
+    if ($('routeMeta')) $('routeMeta').textContent = [distanceText, timeText].filter(Boolean).join(' · ');
+  }
+
+  function isMobileDevice() {
+    return window.matchMedia('(pointer: coarse)').matches || Math.min(window.innerWidth, window.innerHeight) < 820;
+  }
 
   async function requestWakeLock() {
     if (!state.keepAwake || !state.navigationActive || document.visibilityState !== 'visible') return;
@@ -221,7 +233,7 @@
     showOverview();
     const first = data.instructions[0];
     $('instruction').textContent = first ? first.text : mode === 'gpx' ? 'Volg de geladen GPX-route' : 'Volg de route';
-    $('routeMeta').textContent = `${fmtDistance(data.distance)}${data.time ? ` · ${fmtDuration(data.time)}` : ''}`;
+    setRemaining(fmtDistance(data.distance), data.time ? fmtDuration(data.time) : '-');
     $('maneuverIcon').textContent = '↑';
     updateDeveloper();
   }
@@ -371,7 +383,7 @@
         $('gps').classList.add('active');
         $('gps').textContent = 'GPS actief';
         if (state.startMode === 'gps') $('startQuery').value = 'Mijn huidige locatie';
-        if (state.route) setNavigationMode(true);
+        if (state.route) { state.navigationSource = 'gps'; state.navigationPaused = false; setNavigationMode(true); }
         status(`GPS actief · nauwkeurigheid ${Math.round(pos.coords.accuracy)} m`);
       },
       error => {
@@ -388,6 +400,7 @@
 
   function updateNavigation(point, speedMps, heading) {
     $('devSpeed').textContent = `${Math.round(speedMps * 3.6)} km/u`;
+    if (state.navigationPaused) return;
     if (!state.route || state.route.coordinates.length < 2) {
       if (state.follow) map.easeTo({ center: point, zoom: 16, pitch: 45, bearing: Number.isFinite(heading) ? heading : map.getBearing(), duration: 450 });
       return;
@@ -406,7 +419,7 @@
     $('devProgress').textContent = `${percentage}%`;
     const remainingKm = Math.max(0, totalKm - location);
     const avgKmh = state.profile === 'bike' ? 22 : state.profile === 'foot' ? 5 : 70;
-    $('routeMeta').textContent = `${remainingKm.toFixed(1)} km resterend · ongeveer ${fmtDuration(remainingKm / avgKmh * 3600000)}`;
+    setRemaining(`${remainingKm.toFixed(1)} km`, fmtDuration(remainingKm / avgKmh * 3600000));
 
     updateInstructionByIndex(Number(snap.properties.index || 0));
 
@@ -672,8 +685,9 @@
 
   function applyLayoutMode() {
     const physical = physicalOrientation();
-    const rotateClockwise = state.layoutMode === 'landscape' && physical === 'portrait';
-    const rotateCounterClockwise = state.layoutMode === 'portrait' && physical === 'landscape';
+    const allowSoftwareRotation = isMobileDevice();
+    const rotateClockwise = allowSoftwareRotation && state.layoutMode === 'landscape' && physical === 'portrait';
+    const rotateCounterClockwise = allowSoftwareRotation && state.layoutMode === 'portrait' && physical === 'landscape';
 
     document.body.classList.toggle('layout-portrait', state.layoutMode === 'portrait');
     document.body.classList.toggle('layout-landscape', state.layoutMode === 'landscape');
@@ -691,6 +705,7 @@
   }
 
   async function tryNativeOrientationLock(mode) {
+    if (!isMobileDevice()) return false;
     try {
       if (!screen.orientation || typeof screen.orientation.lock !== 'function') return false;
       await screen.orientation.lock(mode);
@@ -709,9 +724,17 @@
 
   function setNavigationMode(active) {
     state.navigationActive = active;
+    if (!active) state.navigationPaused = false;
     document.body.classList.toggle('navigation-active', active);
     applyLayoutMode();
     if (active) {
+      const stopButton = $('stopNavigation');
+      if (stopButton && !state.navigationPaused) {
+        stopButton.textContent = '✕';
+        stopButton.title = 'Navigatie stoppen';
+        stopButton.setAttribute('aria-label', 'Navigatie stoppen');
+        stopButton.classList.remove('resume-button');
+      }
       $('developerPanel').hidden = true;
       $('routeActions').hidden = false;
       $('layoutToggle').hidden = false;
@@ -753,6 +776,7 @@
       setMarker('destination', destination);
       drawRoute(dataRoute, 'address');
       setNavigationMode(true);
+      state.navigationPaused = false;
       state.follow = true;
       status(`${station.name} is als tussenstop toegevoegd.`);
     } catch (error) { status(error.message); }
@@ -808,12 +832,35 @@
   }
 
   function stopNavigation() {
-    pauseSimulation();
-    setNavigationMode(false);
-    state.follow = false;
-    showOverview();
-    status('Navigatie gepauzeerd');
+    const button = $('stopNavigation');
+    if (!state.navigationPaused) {
+      state.navigationPaused = true;
+      state.follow = false;
+      stopSimulationTimer();
+      releaseWakeLock();
+      if (button) {
+        button.textContent = '▶';
+        button.title = 'Navigatie hervatten';
+        button.setAttribute('aria-label', 'Navigatie hervatten');
+        button.classList.add('resume-button');
+      }
+      status('Navigatie gestopt');
+      return;
+    }
+
+    state.navigationPaused = false;
+    state.follow = true;
+    if (button) {
+      button.textContent = '✕';
+      button.title = 'Navigatie stoppen';
+      button.setAttribute('aria-label', 'Navigatie stoppen');
+      button.classList.remove('resume-button');
+    }
+    requestWakeLock();
+    if (state.navigationSource === 'simulation') toggleSimulation();
+    else status('Navigatie hervat');
   }
+
 
   function toggleSimulation() {
     if (!state.route || state.route.coordinates.length < 2) return status('Bereken of laad eerst een route.');
@@ -830,6 +877,8 @@
     const startPosition = turf.along(line, state.simulation.distanceKm, { units: 'kilometers' }).geometry.coordinates;
     const startHeading = bearingAlongRoute(line, state.simulation.distanceKm);
     state.follow = true;
+    state.navigationSource = 'simulation';
+    state.navigationPaused = false;
     setNavigationMode(true);
     setCurrentPosition(startPosition, { source: 'Simulatie', speedMps: 0, heading: startHeading });
 
@@ -901,7 +950,7 @@
     if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
     $('destinationQuery').value = '';
     $('instruction').textContent = 'Geen actieve route';
-    $('routeMeta').textContent = 'Kies een vertrekpunt en bestemming';
+    setRemaining('-', '-');
     $('maneuverIcon').textContent = '↑';
     updateDeveloper();
     status('Route gewist');
