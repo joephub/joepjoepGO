@@ -1,10 +1,10 @@
-# RouteRijder v8
+# RouteRijder v9
 
-Nieuwe functies:
-- Klein instellingenwiel linksboven.
-- Zowel vertrekpunt als bestemming op de kaart kiezen.
-- Nederlandse en beter gekozen eerstvolgende manoeuvre.
-- Rustige navigatiemodus zonder planner en ongebruikte knoppen.
-- Resterende afstand en geschatte reistijd.
-- Knop om een tankstation langs het komende traject toe te voegen.
-- Camera plaatst het voertuig lager in beeld zodat meer toekomstige route zichtbaar is.
+Wijzigingen:
+
+- De voertuigmarker staat lager in het scherm, zodat aanzienlijk meer van de toekomstige route zichtbaar is.
+- De camera gebruikt een vaste scherm-offset in plaats van zware onderpadding.
+- Een nieuwe route zet de simulatiestatus altijd schoon terug.
+- Starten, pauzeren, hervatten en opnieuw starten van de simulatie gebeurt deterministisch.
+- Een voltooide simulatie begint bij een volgende start automatisch opnieuw bij het begin.
+- Linksonder staat versienummer v9.

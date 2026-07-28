@@ -13,8 +13,7 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">v8</div>
-  <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
+  <div class="version-badge" title="Applicatieversie">v9</div>
 
   <header class="planner-card">
     <div class="planner-row">
@@ -22,11 +21,11 @@
       <input id="startQuery" placeholder="Vertrekpunt: mijn locatie" autocomplete="off" disabled />
       <button id="useMapStart" class="mini-button" title="Kies vertrekpunt op kaart">⌖</button>
     </div>
-    <div class="planner-row destination-row">
+    <div class="planner-row">
       <span class="route-dot destination-dot"></span>
       <input id="destinationQuery" placeholder="Waar wil je naartoe?" autocomplete="off" />
-      <button id="useMapDestination" class="mini-button" title="Kies bestemming op kaart">⌖</button>
       <button id="planRoute" class="go-button" title="Route berekenen">→</button>
+      <button id="settings" class="settings-button" title="Instellingen">⚙</button>
     </div>
     <div id="searchResults" class="search-results" hidden></div>
   </header>
@@ -65,10 +64,6 @@
         <small id="routeMeta">Kies een vertrekpunt en bestemming</small>
       </div>
     </div>
-    <div id="routeActions" class="route-actions" hidden>
-      <button id="fuel" class="route-action fuel-button">⛽ Tankstation</button>
-      <button id="stopNavigation" class="route-action stop-button">Stop navigatie</button>
-    </div>
     <div class="controls">
       <button id="gps" class="control-button">Start GPS</button>
       <button id="gpx" class="control-button">Laad GPX</button>
@@ -102,6 +97,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=8"></script>
+<script src="./app.js?v=7"></script>
 </body>
 </html>

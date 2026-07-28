@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const KEY = 'routerijder-v8-settings';
+  const KEY = 'routerijder-settings';
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 
   const state = {
@@ -164,11 +164,23 @@
     updateNavigation(point, options.speedMps || 0, options.heading);
   }
 
+  function stopSimulationTimer() {
+    state.simulation.playing = false;
+    if (state.simulation.timer) cancelAnimationFrame(state.simulation.timer);
+    state.simulation.timer = null;
+    if ($('simPlay')) {
+      $('simPlay').textContent = '▶ Simuleer';
+      $('simPlay').classList.remove('active');
+    }
+  }
+
   function drawRoute(data, mode) {
+    stopSimulationTimer();
     state.route = data;
     state.original = data.coordinates.slice();
     state.mode = mode;
     state.progressKm = 0;
+    state.simulation.distanceKm = 0;
     state.follow = false;
     updateRouteProgress(0);
     setLineSource('rejoin-casing', mode === 'rejoin' ? data.coordinates : []);
@@ -368,7 +380,7 @@
     if (state.autoFollow && (state.follow || speedMps > 1.2 || state.simulation.playing)) {
       state.follow = true;
       const derivedHeading = Number.isFinite(heading) ? heading : bearingAlongRoute(line, location);
-      map.easeTo({ center: point, zoom: 16.3, pitch: 55, bearing: derivedHeading, padding: { top: 70, bottom: 330, left: 35, right: 35 }, duration: 350 });
+      map.easeTo({ center: point, zoom: 15.8, pitch: 55, bearing: derivedHeading, offset: [0, 210], padding: { top: 20, bottom: 20, left: 20, right: 20 }, duration: 350 });
     }
 
     if ((state.mode === 'address' || state.mode === 'gpx') && offKm > 0.065) state.offCount += 1;
@@ -535,23 +547,32 @@
   function toggleSimulation() {
     if (!state.route || state.route.coordinates.length < 2) return status('Bereken of laad eerst een route.');
     if (state.simulation.playing) return pauseSimulation();
-    state.simulation.playing = true;
+
+    const line = turf.lineString(state.route.coordinates);
+    const totalKm = turf.length(line, { units: 'kilometers' });
+    if (!Number.isFinite(state.simulation.distanceKm) || state.simulation.distanceKm < 0 || state.simulation.distanceKm >= totalKm - 0.001) {
+      state.simulation.distanceKm = 0;
+    }
+    state.progressKm = state.simulation.distanceKm;
+    updateRouteProgress(state.progressKm);
+
+    const startPosition = turf.along(line, state.simulation.distanceKm, { units: 'kilometers' }).geometry.coordinates;
+    const startHeading = bearingAlongRoute(line, state.simulation.distanceKm);
     state.follow = true;
     setNavigationMode(true);
+    setCurrentPosition(startPosition, { source: 'Simulatie', speedMps: 0, heading: startHeading });
+
+    state.simulation.playing = true;
     state.simulation.lastTime = performance.now();
     $('simPlay').textContent = '⏸ Pauze';
     $('simPlay').classList.add('active');
     $('devSource').textContent = 'Simulatie';
-    status('Routesimulatie gestart');
+    status(state.simulation.distanceKm > 0 ? 'Routesimulatie hervat' : 'Routesimulatie gestart');
     state.simulation.timer = requestAnimationFrame(simulationFrame);
   }
 
   function pauseSimulation() {
-    state.simulation.playing = false;
-    if (state.simulation.timer) cancelAnimationFrame(state.simulation.timer);
-    state.simulation.timer = null;
-    $('simPlay').textContent = '▶ Simuleer';
-    $('simPlay').classList.remove('active');
+    stopSimulationTimer();
     status('Simulatie gepauzeerd');
   }
 
