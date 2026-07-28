@@ -742,7 +742,7 @@ body.gpx-point-adding .gpx-editor-help::after {
 body.force-rotate-90, body.force-rotate-180, body.force-rotate-270 { overscroll-behavior: none; }
 body.navigation-active .layout-toggle { font-size: 22px; touch-action: manipulation; }
 
-/* v28: hybride/exacte GPX-routebouw en vrij instelbaar startpunt */
+/* v29: hybride corridor via Routing API en vrij instelbaar startpunt */
 .gpx-route-breakdown {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

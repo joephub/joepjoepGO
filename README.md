@@ -1,48 +1,24 @@
-# joepjoepGO v28
+# joepjoepGO v29
 
-Statische GitHub Pages-versie van joepjoepGO met adresnavigatie, GPX-analyse, GPX-bewerking en motorvriendelijke GPX-navigatie.
+## Belangrijkste correctie
 
-## Nieuw in v28
+De hybride GPX-verwerking gebruikt voortaan de gewone GraphHopper Routing API als corridorproef. Het Map Matching-onderdeel is niet in ieder GraphHopper-abonnement beschikbaar. Een fout of ontbrekend abonnement wordt daardoor niet meer ten onrechte uitgelegd als een offroaddeel.
 
-### Twee manieren om een GPX te rijden
+Per GPX-deel berekent joepjoepGO een wegroute door enkele vormpunten. Daarna vergelijkt de app de volledige berekende lijn met de oorspronkelijke GPX:
 
-Na het kiezen van één of meerdere GPX-trajecten vraagt joepjoepGO hoe de route moet worden opgebouwd:
+- blijft de wegroute volledig binnen de gekozen tolerantie, dan wordt het deel blauw;
+- wijkt de wegroute te veel af, dan onderzoekt de app kleinere delen afzonderlijk;
+- alleen delen waarvoor geen betrouwbare wegroute binnen de corridor bestaat, blijven oranje;
+- echte openingen tussen GPX-trajecten blijven groen of rood volgens de bestaande logica.
 
-- **Hybride route**: wegdelen worden alleen als normale rijroute gebruikt wanneer de berekende lijn binnen de gekozen tolerantie van de oorspronkelijke GPX blijft. De standaard is 30 meter. Twijfelachtige en offroaddelen blijven exact de GPX volgen.
-- **GPX exact volgen**: alle bestaande GPX-punten blijven onaangetast. Alleen gaten tussen losse bestanden, tracks of segmenten worden als nieuwe wegverbinding berekend.
-
-De routevoorvertoning gebruikt verschillende kleuren:
-
-- blauw: betrouwbaar aan een weg gekoppeld;
-- oranje: exacte GPX/offroad;
-- groen: nieuw berekend verbindingsstuk;
-- rood: niet automatisch opgeloste verbinding;
-- grijs gestippeld: oorspronkelijke GPX ter vergelijking.
-
-Op exacte/offroaddelen probeert de app tijdens het rijden niet automatisch naar een gewone weg terug te routeren.
-
-### Startpunt bewerken
-
-In **Bewerk GPX** kan het huidige startpunt nu worden verwijderd. Het eerstvolgende overgebleven punt wordt dan automatisch het nieuwe startpunt.
-
-Een ander routepunt kan ook worden geselecteerd en met **Maak startpunt** als begin worden ingesteld:
-
-- bij een gesloten rondrit wordt de routevolgorde rondgedraaid;
-- bij een open route vraagt de app toestemming om de punten vóór het nieuwe startpunt weg te laten;
-- het eindpunt blijft beschermd, zodat minimaal een bruikbare route overblijft.
-
-Start- en eindpunt hebben op de kaart een eigen kleur en kunnen net als andere punten worden versleept.
-
-### Meerdere GPX-bestanden
-
-Meerdere bestanden en geselecteerde analysetrajecten kunnen in één route worden verwerkt. Bestaande GPX-delen blijven in hun gekozen volgorde behouden; alleen een volgend deel wordt omgedraaid wanneer dat duidelijk beter op het vorige uiteinde aansluit.
+Hierdoor moeten gewone wegen zoals in het gemelde voorbeeld blauw worden, terwijl bewuste offroadstukken exact als oranje GPX behouden blijven.
 
 ## Publiceren
 
-Upload alle bestanden uit deze map naar de root van de GitHub Pages-repository. Open de site daarna eenmalig met:
+Upload alle bestanden naar de hoofdmap van de GitHub Pages-repository en open daarna:
 
 ```text
-?v=28
+?v=29
 ```
 
-Controleer linksonder of **joepjoepGO v28** staat.
+Controleer linksonder of **joepjoepGO v29** staat.

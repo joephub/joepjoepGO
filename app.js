@@ -2,7 +2,7 @@
   'use strict';
 
   const APP_NAME = 'joepjoepGO';
-  const APP_VERSION = '28';
+  const APP_VERSION = '29';
   const $ = (id) => document.getElementById(id);
   const KEY = 'joepjoepgo-settings-v1';
   const LEGACY_KEY = 'routerijder-settings';
@@ -1176,33 +1176,66 @@
     return chunks;
   }
 
+  function splitCoordinatesNearHalfFlexible(coordinates) {
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return [coordinates || [], []];
+    if (coordinates.length >= 5) return splitCoordinatesNearHalf(coordinates);
+    const line = turf.lineString(coordinates);
+    const totalKm = turf.length(line, { units: 'kilometers' });
+    if (!Number.isFinite(totalKm) || totalKm <= 0.0001) return [coordinates.slice(0, -1), coordinates.slice(-2)];
+    const middleKm = totalKm / 2;
+    const left = turf.lineSliceAlong(line, 0, middleKm, { units: 'kilometers' }).geometry.coordinates;
+    const right = turf.lineSliceAlong(line, middleKm, totalKm, { units: 'kilometers' }).geometry.coordinates;
+    return [left, right];
+  }
+
+  function hybridRoutingPoints(coordinates, geometryKm) {
+    // Gebruik de gewone Routing API als corridorproef. Het Map Matching-
+    // onderdeel is niet in ieder GraphHopper-abonnement beschikbaar.
+    const count = geometryKm <= 0.35 ? 2 : geometryKm <= 1.5 ? 3 : 5;
+    return sampleLineCoordinates(coordinates, count);
+  }
+
+  async function roadCandidateForGpxWindow(coordinates, geometryKm) {
+    const points = hybridRoutingPoints(coordinates, geometryKm);
+    return calculateRouteViaPointsChunk(points);
+  }
+
   async function hybridiseGpxWindow(coordinates, toleranceMeters, context, depth = 0) {
     const geometryKm = turf.length(turf.lineString(coordinates), { units: 'kilometers' });
     const label = context.label || 'GPX-deel';
+    const canSplitFurther = depth < 8 && geometryKm > 0.16 && coordinates.length >= 2;
     try {
-      const sampleCount = Math.max(10, Math.min(78, Math.ceil(geometryKm * 7) + 4));
-      const sampled = sampleLineCoordinates(coordinates, sampleCount);
-      const matched = await mapMatchGpxChunkAdaptive(sampled);
-      const assessment = assessHybridMatch(coordinates, matched.coordinates, toleranceMeters);
+      const candidate = await roadCandidateForGpxWindow(coordinates, geometryKm);
+      const assessment = assessHybridMatch(coordinates, candidate.coordinates, toleranceMeters);
       if (assessment.accepted) {
-        return [routeResultComponent(matched, 'matched', `${label} · op weg`, { assessment })];
+        return [routeResultComponent(candidate, 'matched', `${label} · op weg`, { assessment })];
       }
-      if (depth < 5 && geometryKm > 0.75 && coordinates.length >= 6) {
-        const [left, right] = splitCoordinatesNearHalf(coordinates);
-        const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
-        const second = await hybridiseGpxWindow(right, toleranceMeters, context, depth + 1);
-        return first.concat(second);
+      if (canSplitFurther) {
+        const [left, right] = splitCoordinatesNearHalfFlexible(coordinates);
+        if (left.length >= 2 && right.length >= 2) {
+          const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
+          const second = await hybridiseGpxWindow(right, toleranceMeters, context, depth + 1);
+          return first.concat(second);
+        }
       }
-      return [exactRouteComponent(coordinates, { label: `${label} · exact behouden`, reason: `Afwijking ${Math.round(assessment.p95)} m` })];
+      return [exactRouteComponent(coordinates, {
+        label: `${label} · exact behouden`,
+        reason: `Geen wegroute volledig binnen ${toleranceMeters} m (95%: ${Math.round(assessment.p95)} m)`
+      })];
     } catch (error) {
-      console.debug(`${label}: dit deel blijft exact GPX.`, error);
-      if (depth < 4 && geometryKm > 1.2 && coordinates.length >= 8) {
-        const [left, right] = splitCoordinatesNearHalf(coordinates);
-        const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
-        const second = await hybridiseGpxWindow(right, toleranceMeters, context, depth + 1);
-        return first.concat(second);
+      console.debug(`${label}: corridorproef via Routing API mislukt; dit deel wordt kleiner onderzocht.`, error);
+      if (canSplitFurther) {
+        const [left, right] = splitCoordinatesNearHalfFlexible(coordinates);
+        if (left.length >= 2 && right.length >= 2) {
+          const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
+          const second = await hybridiseGpxWindow(right, toleranceMeters, context, depth + 1);
+          return first.concat(second);
+        }
       }
-      return [exactRouteComponent(coordinates, { label: `${label} · exact behouden`, reason: 'Niet betrouwbaar aan een weg te koppelen' })];
+      return [exactRouteComponent(coordinates, {
+        label: `${label} · exact behouden`,
+        reason: 'Geen betrouwbare wegroute binnen de ingestelde corridor gevonden'
+      })];
     }
   }
 
@@ -1267,7 +1300,7 @@
     const route = composeRouteComponents(components, { originalParts: ordered });
     const exactCount = route.components.filter(component => component.kind === 'exact').length;
     const unresolvedCount = route.components.filter(component => component.kind === 'unresolved').length;
-    if (routeMode === 'hybrid' && exactCount) warnings.push(`${exactCount} deel${exactCount === 1 ? '' : 'en'} exact als GPX behouden omdat wegmatching niet binnen ${toleranceMeters} meter bleef.`);
+    if (routeMode === 'hybrid' && exactCount) warnings.push(`${exactCount} deel${exactCount === 1 ? '' : 'en'} exact als GPX behouden omdat geen berekende wegroute volledig binnen ${toleranceMeters} meter bleef.`);
     if (unresolvedCount) warnings.push(`${unresolvedCount} verbinding${unresolvedCount === 1 ? '' : 'en'} moet op de kaart worden gecontroleerd.`);
     route.summary = componentSummary(route.components);
     const uniqueWarnings = [...new Set(warnings)];
