@@ -13,7 +13,9 @@
     lastReroute: 0,
     watch: null,
     marker: null,
-    mapReady: false
+    mapReady: false,
+    followGps: true,
+    routeStartPosition: null
   };
 
   const status = (text) => { $('status').textContent = text; };
@@ -116,6 +118,9 @@
   function draw(data, mode) {
     state.route = data;
     state.mode = mode;
+    // Toon eerst de volledige route. GPS-volgen start automatisch zodra de gebruiker rijdt.
+    state.followGps = false;
+    state.routeStartPosition = state.current ? [...state.current] : null;
     const sourceId = mode === 'rejoin' ? 'rejoin-route' : 'main-route';
     const source = map.getSource(sourceId);
     if (source) source.setData(turf.lineString(data.coordinates));
@@ -231,6 +236,8 @@
     state.original = [];
     state.route = null;
     state.mode = 'idle';
+    state.followGps = true;
+    state.routeStartPosition = null;
     for (const id of ['main-route', 'rejoin-route']) {
       const source = map.getSource(id);
       if (source) source.setData(turf.lineString([]));
@@ -288,13 +295,27 @@
     } else {
       state.marker.setLngLat(pos);
     }
-    map.easeTo({
-      center: pos,
-      zoom: Math.max(map.getZoom(), 15),
-      bearing: Number.isFinite(position.coords.heading) ? position.coords.heading : map.getBearing(),
-      pitch: 45,
-      duration: 700
-    });
+    // Na het berekenen van een route blijft eerst het volledige route-overzicht zichtbaar.
+    // Zodra de gebruiker daadwerkelijk beweegt, schakelt de kaart vanzelf naar GPS-volgen.
+    if (!state.followGps && state.routeStartPosition) {
+      const movedKm = turf.distance(
+        turf.point(state.routeStartPosition),
+        turf.point(pos),
+        { units: 'kilometers' }
+      );
+      const speed = Number.isFinite(position.coords.speed) ? position.coords.speed : 0;
+      if (movedKm > 0.03 || speed > 1.5) state.followGps = true;
+    }
+
+    if (state.followGps || !state.route) {
+      map.easeTo({
+        center: pos,
+        zoom: Math.max(map.getZoom(), 15),
+        bearing: Number.isFinite(position.coords.heading) ? position.coords.heading : map.getBearing(),
+        pitch: 45,
+        duration: 700
+      });
+    }
     updateInstruction(pos);
 
     if (state.original.length > 1 && (state.mode === 'gpx' || state.mode === 'address')) {
