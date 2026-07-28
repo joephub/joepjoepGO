@@ -2,7 +2,7 @@
   'use strict';
 
   const APP_NAME = 'joepjoepGO';
-  const APP_VERSION = '26';
+  const APP_VERSION = '27';
   const $ = (id) => document.getElementById(id);
   const KEY = 'joepjoepgo-settings-v1';
   const LEGACY_KEY = 'routerijder-settings';
@@ -56,9 +56,10 @@
     progressKm: 0,
     offCount: 0,
     lastReroute: 0,
-    layoutMode: saved.layoutMode || (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'),
-    rotationFallback: false,
-    layoutManual: false,
+    layoutMode: 'portrait',
+    orientationStep: 0,
+    orientationRequestToken: 0,
+    orientationNativeLocked: false,
     fuelCandidates: [],
     fuelLoading: false,
     fuelSearchToken: 0,
@@ -68,17 +69,13 @@
     gpxAppendMode: false,
     gpxRoutePreparing: false,
     gpxPrepareProgress: '',
-    gpxPrepareToken: 0,
     gpxRoutePrepared: false,
     gpxPreparedMethod: '',
-    gpxPreparedSegmentIds: [],
     gpxPrepareWarnings: [],
     gpxBaseRoute: null,
+    gpxActiveSegmentIds: [],
     gpxStartStrategy: null,
-    gpxStartLoading: false,
-    navigationStarting: false,
-    lastErrorMessage: '',
-    lastErrorAt: 0,
+    gpxStartWaiting: false,
     nextManeuver: null,
     gpxDocument: null,
     gpxEditor: { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, addMode: false, boxStart: null, boxElement: null, pointerId: null, history: [] },
@@ -106,12 +103,6 @@
       return;
     }
     const duration = Number.isFinite(settings.duration) ? settings.duration : 5200;
-    if (settings.error === true) {
-      const now = Date.now();
-      if (state.lastErrorMessage === text && now - state.lastErrorAt < 3200) return;
-      state.lastErrorMessage = text;
-      state.lastErrorAt = now;
-    }
     element.classList.toggle('is-error', settings.error === true);
     element.textContent = text;
     element.hidden = false;
@@ -247,7 +238,6 @@
       profile: state.profile,
       autoFollow: state.autoFollow,
       keepAwake: state.keepAwake,
-      layoutMode: state.layoutMode,
       avatar: state.avatar,
       customAvatar: state.customAvatar,
       gpxJumpThresholdMeters: state.gpxAnalysis.jumpThresholdMeters
@@ -280,7 +270,9 @@
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.navigationActive && !state.navigationPaused) requestWakeLock();
+    if (document.visibilityState !== 'visible') return;
+    requestOrientationStep(state.navigationActive ? state.orientationStep : 0, { silent: true });
+    if (state.navigationActive && !state.navigationPaused) requestWakeLock();
   });
 
   const map = new maplibregl.Map({
@@ -405,11 +397,21 @@
     return { type: 'FeatureCollection', features: [] };
   }
 
+  function selectedGpxSegments() {
+    return (state.gpxAnalysis.segments || []).filter(segment => state.gpxAnalysis.selectedIds.has(segment.id));
+  }
+
+  function preferredGpxSegments() {
+    return selectedGpxSegments();
+  }
+
   function renderUi() {
     const hasRoute = Boolean(state.route && state.route.coordinates?.length >= 2);
     const hasGpx = Boolean(state.gpxDocument);
+    const availableSegments = state.gpxAnalysis.segments?.length || 0;
+    const selectedSegments = preferredGpxSegments().length;
+    const canPrepareGpx = hasGpx && selectedSegments > 0;
     const navigation = state.navigationActive;
-    const gpxReady = hasGpx && hasRoute && state.mode === 'gpx' && state.gpxRoutePrepared;
     const choosing = !navigation && !hasRoute && !hasGpx && !state.entryMode;
     const planningAddress = !navigation && !hasRoute && !hasGpx && state.entryMode === 'address';
 
@@ -418,7 +420,6 @@
     document.body.classList.toggle('gpx-loaded', hasGpx);
     document.body.classList.toggle('route-ready', hasRoute);
     document.body.classList.toggle('choosing-mode', choosing);
-    document.body.classList.toggle('gpx-preparing', state.gpxRoutePreparing);
 
     if ($('startChoice')) $('startChoice').hidden = !choosing;
     if ($('plannerCard')) $('plannerCard').hidden = !planningAddress;
@@ -434,32 +435,34 @@
     if ($('reverseGpx')) $('reverseGpx').hidden = !hasGpx;
     if ($('appendGpx')) $('appendGpx').hidden = !hasGpx;
     if ($('prepareGpxRoute')) {
-      $('prepareGpxRoute').hidden = !hasGpx;
-      $('prepareGpxRoute').disabled = state.gpxRoutePreparing || gpxReady;
-      const segmentCount = state.gpxAnalysis.segments.length || state.gpxDocument?.parts?.length || 0;
-      $('prepareGpxRoute').textContent = state.gpxRoutePreparing
+      const button = $('prepareGpxRoute');
+      button.hidden = !canPrepareGpx;
+      button.disabled = state.gpxRoutePreparing || state.gpxRoutePrepared;
+      button.classList.toggle('is-loading', state.gpxRoutePreparing);
+      button.setAttribute('aria-busy', state.gpxRoutePreparing ? 'true' : 'false');
+      button.textContent = state.gpxRoutePreparing
         ? (state.gpxPrepareProgress || 'Rijroute maken…')
-        : gpxReady
+        : state.gpxRoutePrepared
           ? '✓ Rijroute klaar'
-          : segmentCount > 1 ? `Maak rijroute van ${segmentCount} trajecten` : 'Maak rijroute';
+          : selectedSegments > 1
+            ? `Maak 1 rijroute (${selectedSegments})`
+            : 'Maak rijroute';
     }
     if ($('prepareEditedGpx')) {
-      $('prepareEditedGpx').disabled = state.gpxRoutePreparing || (gpxReady && state.gpxPreparedSegmentIds.includes('bewerkt'));
-      $('prepareEditedGpx').textContent = state.gpxRoutePreparing ? (state.gpxPrepareProgress || 'Rijroute maken…') : 'Maak rijroute van bewerking';
+      $('prepareEditedGpx').disabled = state.gpxRoutePreparing || state.gpxRoutePrepared;
+      $('prepareEditedGpx').textContent = state.gpxRoutePreparing ? (state.gpxPrepareProgress || 'Rijroute maken…') : state.gpxRoutePrepared ? '✓ Rijroute klaar' : 'Maak rijroute';
     }
     if ($('replaceGpx')) $('replaceGpx').hidden = !hasGpx;
     if ($('startNavigation')) {
-      const canStart = hasGpx ? gpxReady : hasRoute;
-      $('startNavigation').disabled = !canStart || state.navigationStarting || state.gpxRoutePreparing;
-      $('startNavigation').classList.toggle('is-loading', state.navigationStarting);
-      $('startNavigation').title = canStart
-        ? 'Start navigatie'
-        : hasGpx ? 'Maak eerst één rijroute van de GPX-trajecten' : 'Bereken eerst een route';
+      const canStart = hasRoute || canPrepareGpx;
+      $('startNavigation').disabled = !canStart || state.gpxRoutePreparing;
+      $('startNavigation').title = canStart ? 'Start navigatie' : 'Laad eerst een bruikbare route';
     }
 
     renderGpsIndicator();
     updatePauseButton();
     updateTurnAlert();
+    updateGpxAnalysisSelectionUi();
     renderRoutePreview();
     applyLayoutMode();
     if (state.mapReady) window.requestAnimationFrame(() => map.resize());
@@ -478,23 +481,25 @@
 
     if (documentInfo) {
       const analysedCount = state.gpxAnalysis.segments.length || documentInfo.parts.length;
-      const fileCount = documentInfo.fileNames?.length || 1;
-      const ready = hasRoute && state.gpxRoutePrepared;
-      $('previewEyebrow').textContent = ready ? 'Rijroute klaar' : 'GPX geladen';
+      const selectedCount = preferredGpxSegments().length;
+      $('previewEyebrow').textContent = state.gpxRoutePrepared ? 'Rijroute klaar' : hasRoute ? 'GPX geselecteerd' : 'GPX geladen';
       $('previewTitle').textContent = documentInfo.fileName || 'GPX-route';
-      if (state.gpxRoutePreparing) {
-        $('previewMessage').textContent = state.gpxPrepareProgress || 'De GPX-trajecten worden op het wegennet geplaatst en verbonden.';
-      } else if (ready) {
-        const warning = state.gpxPrepareWarnings.length
-          ? ` · ${state.gpxPrepareWarnings.length} aandachtspunt${state.gpxPrepareWarnings.length === 1 ? '' : 'en'}`
-          : '';
-        $('previewMessage').textContent = `${state.gpxPreparedSegmentIds.length || analysedCount} traject${(state.gpxPreparedSegmentIds.length || analysedCount) === 1 ? '' : 'en'} samengevoegd · ${state.gpxPreparedMethod || 'route op wegen'}${warning}.`;
+      if (state.gpxRoutePrepared && hasRoute) {
+        const warnings = state.gpxPrepareWarnings?.length ? ` · ${state.gpxPrepareWarnings.length} waarschuwing${state.gpxPrepareWarnings.length === 1 ? '' : 'en'}` : '';
+        $('previewMessage').textContent = `${state.route.coordinates.length.toLocaleString('nl-NL')} routepunten · ${state.gpxPreparedMethod || 'route over het wegennet'}${warnings}.`;
+      } else if (hasRoute) {
+        const selectedIds = selectedGpxSegments().map(segment => String(segment.id)).sort();
+        const activeIds = (state.gpxActiveSegmentIds || []).map(id => String(id)).sort();
+        const selectionChanged = selectedIds.length !== activeIds.length || selectedIds.some((id, index) => id !== activeIds[index]);
+        $('previewMessage').textContent = selectionChanged
+          ? `De trajectselectie is gewijzigd. Maak de rijroute opnieuw om ${selectedCount} gekozen traject${selectedCount === 1 ? '' : 'en'} samen te voegen.`
+          : `${state.route.coordinates.length.toLocaleString('nl-NL')} GPX-punten geselecteerd. Kies Maak rijroute om de lijn op wegen te leggen en eventuele gaten te verbinden.`;
       } else {
-        $('previewMessage').textContent = `${fileCount} GPX-bestand${fileCount === 1 ? '' : 'en'} · ${analysedCount} traject${analysedCount === 1 ? '' : 'en'}. Maak hiervan één rijroute; lege stukken worden waar mogelijk over de weg verbonden.`;
+        $('previewMessage').textContent = `${analysedCount} traject${analysedCount === 1 ? '' : 'en'} gevonden. ${selectedCount} traject${selectedCount === 1 ? '' : 'en'} worden samengevoegd tot één rijroute; pas de selectie zo nodig aan via Analyse.`;
       }
-      $('previewDistance').textContent = ready ? fmtDistance(state.route.distance) : fmtDistance(documentInfo.totalDistance);
-      $('previewTime').textContent = ready && state.route.time ? fmtDuration(state.route.time) : '-';
-      $('previewSegments').textContent = String(ready ? (state.gpxPreparedSegmentIds.length || analysedCount) : analysedCount);
+      $('previewDistance').textContent = hasRoute ? fmtDistance(state.route.distance) : fmtDistance(documentInfo.totalDistance);
+      $('previewTime').textContent = hasRoute && state.route.time ? fmtDuration(state.route.time) : '-';
+      $('previewSegments').textContent = String(analysedCount);
       return;
     }
 
@@ -679,6 +684,19 @@
     };
   }
 
+
+  function gpxEditorHasChanges() {
+    const original = state.gpxEditor.originalCoordinates || [];
+    const edited = state.gpxEditor.editCoordinates || [];
+    if (original.length !== edited.length) return true;
+    for (let index = 0; index < original.length; index += 1) {
+      const before = original[index];
+      const after = edited[index];
+      if (!before || !after || Math.abs(before[0] - after[0]) > 1e-9 || Math.abs(before[1] - after[1]) > 1e-9) return true;
+    }
+    return false;
+  }
+
   function gpxXmlFromCoordinates(coordinates, name = 'GPX-route') {
     const points = coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
     return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="${APP_NAME} v${APP_VERSION}" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${escapeXml(name)}</name><trkseg>\n${points}\n  </trkseg></trk>\n</gpx>`;
@@ -693,13 +711,13 @@
     return sampled.map(point => [...point]);
   }
 
-  async function mapMatchGpxChunk(coordinates, name = 'GPX-route') {
+  async function mapMatchGpxChunk(coordinates) {
     const url = new URL('https://graphhopper.com/api/1/match');
     Object.entries({ profile: state.profile, locale: 'nl', instructions: 'true', points_encoded: 'false', type: 'json', gps_accuracy: '30', key: state.apiKey }).forEach(([key, value]) => url.searchParams.set(key, value));
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/gpx+xml' },
-      body: gpxXmlFromCoordinates(coordinates, name)
+      body: gpxXmlFromCoordinates(coordinates, state.gpxEditor.fileName || 'GPX-route')
     });
     if (!response.ok) {
       let detail = '';
@@ -717,46 +735,40 @@
 
   function mergeMatchedRouteParts(parts) {
     const merged = { coordinates: [], distance: 0, time: 0, instructions: [] };
-    parts.forEach((result, index) => appendRoutePart(merged, result, { intermediate: index < parts.length - 1 }));
+    parts.forEach((result, index) => {
+      const overlap = index > 0 && merged.coordinates.length && result.coordinates.length
+        && turf.distance(turf.point(merged.coordinates.at(-1)), turf.point(result.coordinates[0]), { units: 'kilometers' }) < 0.03;
+      const offset = merged.coordinates.length - (overlap ? 1 : 0);
+      merged.coordinates.push(...(overlap ? result.coordinates.slice(1) : result.coordinates));
+      merged.distance += Number(result.distance) || 0;
+      merged.time += Number(result.time) || 0;
+      const instructions = index < parts.length - 1
+        ? (result.instructions || []).filter(item => ![4, 5].includes(Number(item.sign)))
+        : (result.instructions || []);
+      merged.instructions.push(...adjustInstructions(instructions, Math.max(0, offset), 0));
+    });
     return merged;
   }
 
-  function appendRoutePart(merged, result, options = {}) {
-    if (!result?.coordinates?.length) return merged;
-    const overlap = merged.coordinates.length && turf.distance(
-      turf.point(merged.coordinates.at(-1)),
-      turf.point(result.coordinates[0]),
-      { units: 'meters' }
-    ) < 25;
-    const offset = Math.max(0, merged.coordinates.length - (overlap ? 1 : 0));
-    merged.coordinates.push(...(overlap ? result.coordinates.slice(1) : result.coordinates));
-    merged.distance += Number(result.distance) || 0;
-    merged.time += Number(result.time) || 0;
-    const instructions = options.intermediate
-      ? (result.instructions || []).filter(item => ![4, 5].includes(Number(item.sign)))
-      : (result.instructions || []);
-    merged.instructions.push(...adjustInstructions(instructions, offset, 0));
-    return merged;
-  }
-
-  async function mapMatchGpxChunkAdaptive(coordinates, name, depth = 0) {
+  async function mapMatchGpxChunkAdaptive(coordinates, depth = 0) {
     try {
-      return await mapMatchGpxChunk(coordinates, name);
+      return await mapMatchGpxChunk(coordinates);
     } catch (error) {
       const canSplit = coordinates.length > 35 && depth < 5 && [400, 413, 422].includes(Number(error.status));
       if (!canSplit) throw error;
       const middle = Math.floor(coordinates.length / 2);
       const left = coordinates.slice(0, middle + 1);
       const right = coordinates.slice(Math.max(0, middle));
-      const first = await mapMatchGpxChunkAdaptive(left, name, depth + 1);
-      const second = await mapMatchGpxChunkAdaptive(right, name, depth + 1);
+      const first = await mapMatchGpxChunkAdaptive(left, depth + 1);
+      const second = await mapMatchGpxChunkAdaptive(right, depth + 1);
       return mergeMatchedRouteParts([first, second]);
     }
   }
 
   async function mapMatchGpx(coordinates, options = {}) {
     ensureKey();
-    const sampled = sampleGpxCoordinates(coordinates, Number(options.maxPoints) || 1800);
+    const label = options.label || 'Rijroute';
+    const sampled = sampleGpxCoordinates(coordinates, 1800);
     const chunkSize = 450;
     const chunks = [];
     for (let start = 0; start < sampled.length - 1; start += chunkSize - 1) {
@@ -766,10 +778,9 @@
     }
     const results = [];
     for (let index = 0; index < chunks.length; index += 1) {
-      const prefix = options.progressPrefix || 'Rijroute';
-      state.gpxPrepareProgress = chunks.length > 1 ? `${prefix} · deel ${index + 1}/${chunks.length}…` : `${prefix}…`;
+      state.gpxPrepareProgress = chunks.length > 1 ? `${label} · deel ${index + 1}/${chunks.length}…` : `${label}…`;
       renderUi();
-      results.push(await mapMatchGpxChunkAdaptive(chunks[index], options.name || 'GPX-route'));
+      results.push(await mapMatchGpxChunkAdaptive(chunks[index]));
     }
     const merged = mergeMatchedRouteParts(results);
     if (merged.coordinates.length < 2) throw new Error('De kaartmatching leverde geen bruikbare rijroute op.');
@@ -777,248 +788,227 @@
   }
 
   async function fallbackRouteFromGpx(coordinates) {
-    const points = sampleGpxCoordinates(coordinates, Math.min(34, Math.max(8, Math.ceil(coordinates.length / 220))));
+    // Wanneer map matching niet beschikbaar is, houd de vorm beter vast door
+    // via meerdere representatieve GPX-punten te routeren.
+    const points = sampleGpxCoordinates(coordinates, Math.min(30, Math.max(8, Math.ceil(coordinates.length / 250))));
     return calculateRouteViaPoints(points);
   }
 
   function invalidatePreparedGpx() {
-    state.gpxPrepareToken += 1;
     state.gpxRoutePrepared = false;
     state.gpxPreparedMethod = '';
-    state.gpxPreparedSegmentIds = [];
     state.gpxPrepareWarnings = [];
     state.gpxBaseRoute = null;
     state.gpxStartStrategy = null;
   }
 
-  function cloneGpxSegment(segment, reversed = false) {
-    const coordinates = (segment.coordinates || []).map(point => [...point]);
-    if (reversed) coordinates.reverse();
-    return { ...segment, coordinates, reversed: Boolean(reversed) };
+  function cloneGpxSegment(segment) {
+    return {
+      ...segment,
+      coordinates: (segment.coordinates || []).map(point => [...point])
+    };
   }
 
-  function routeGapKm(first, second) {
-    return turf.distance(turf.point(first.coordinates.at(-1)), turf.point(second.coordinates[0]), { units: 'kilometers' });
-  }
+  function orderedGpxSegmentsForJoin(segments) {
+    const remaining = (segments || [])
+      .filter(segment => Array.isArray(segment.coordinates) && segment.coordinates.length >= 2)
+      .map(cloneGpxSegment)
+      .sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+    if (!remaining.length) return [];
 
-  function greedyGpxChain(segments, startIndex, reverseStart) {
-    const remaining = segments.map((segment, index) => ({ segment, index })).filter(item => item.index !== startIndex);
-    const chain = [cloneGpxSegment(segments[startIndex], reverseStart)];
-    let totalGapKm = 0;
+    const ordered = [remaining.shift()];
     while (remaining.length) {
-      const from = chain.at(-1).coordinates.at(-1);
-      let best = null;
-      remaining.forEach((item, remainingIndex) => {
-        const startDistance = turf.distance(turf.point(from), turf.point(item.segment.coordinates[0]), { units: 'kilometers' });
-        const endDistance = turf.distance(turf.point(from), turf.point(item.segment.coordinates.at(-1)), { units: 'kilometers' });
-        const candidate = endDistance < startDistance
-          ? { remainingIndex, distance: endDistance, reversed: true }
-          : { remainingIndex, distance: startDistance, reversed: false };
-        if (!best || candidate.distance < best.distance) best = candidate;
+      const currentEnd = ordered[ordered.length - 1].coordinates.at(-1);
+      let bestIndex = 0;
+      let reverse = false;
+      let bestDistance = Infinity;
+      remaining.forEach((segment, index) => {
+        const toStart = turf.distance(turf.point(currentEnd), turf.point(segment.coordinates[0]), { units: 'kilometers' });
+        const toEnd = turf.distance(turf.point(currentEnd), turf.point(segment.coordinates.at(-1)), { units: 'kilometers' });
+        if (toStart < bestDistance) {
+          bestDistance = toStart;
+          bestIndex = index;
+          reverse = false;
+        }
+        if (toEnd < bestDistance) {
+          bestDistance = toEnd;
+          bestIndex = index;
+          reverse = true;
+        }
       });
-      const picked = remaining.splice(best.remainingIndex, 1)[0];
-      chain.push(cloneGpxSegment(picked.segment, best.reversed));
-      totalGapKm += best.distance;
+      const next = remaining.splice(bestIndex, 1)[0];
+      if (reverse) next.coordinates.reverse();
+      ordered.push(next);
     }
-    return { chain, totalGapKm };
+    return ordered;
   }
 
-  function orderGpxSegmentsForDriving(segments, options = {}) {
-    const valid = (segments || []).filter(segment => Array.isArray(segment.coordinates) && segment.coordinates.length >= 2);
-    if (valid.length <= 1) return valid.map(segment => cloneGpxSegment(segment));
-    if (options.preserveOrder) return valid.map(segment => cloneGpxSegment(segment));
-
-    // Houd de volgorde uit de GPX-bestanden en uit de analyselijst aan. Alleen de
-    // richting van een volgend traject wordt zo nodig omgedraaid. Zo blijft het
-    // eerste geladen traject ook werkelijk het starttraject.
-    const chain = [cloneGpxSegment(valid[0])];
-    for (let index = 1; index < valid.length; index += 1) {
-      const previousEnd = chain.at(-1).coordinates.at(-1);
-      const segment = valid[index];
-      const distanceToStart = turf.distance(turf.point(previousEnd), turf.point(segment.coordinates[0]), { units: 'kilometers' });
-      const distanceToEnd = turf.distance(turf.point(previousEnd), turf.point(segment.coordinates.at(-1)), { units: 'kilometers' });
-      chain.push(cloneGpxSegment(segment, distanceToEnd < distanceToStart));
-    }
-    return chain;
+  function initialiseGpxEditorCoordinates(coordinates, options = {}) {
+    const clean = (coordinates || []).filter(point => Array.isArray(point) && point.length >= 2).map(point => [...point]);
+    if (clean.length < 2) throw new Error('De samengestelde GPX bevat te weinig punten.');
+    state.gpxEditor = {
+      active: false,
+      fileName: options.fileName || state.gpxDocument?.fileName || 'route',
+      originalCoordinates: clean.map(point => [...point]),
+      editCoordinates: clean.map(point => [...point]),
+      selectedIndices: new Set(),
+      selectedMarker: null,
+      boxMode: false,
+      addMode: false,
+      boxStart: null,
+      boxElement: null,
+      pointerId: null,
+      history: []
+    };
+    state.startPoint = clean[0];
+    state.destinationPoint = clean.at(-1);
+    state.startLabel = 'Start GPX';
+    state.destinationLabel = 'Einde GPX';
+    setMarker('start', clean[0]);
+    setMarker('destination', clean.at(-1));
   }
 
-  async function convertGpxSegmentToRoad(segment, index, total, warnings) {
-    const name = segment.name || `Traject ${index + 1}`;
-    const progressPrefix = `Traject ${index + 1}/${total}`;
-    try {
-      const route = await mapMatchGpx(segment.coordinates, { name, progressPrefix });
-      return { route, method: 'kaartmatching' };
-    } catch (matchingError) {
-      console.warn(`Kaartmatching van ${name} mislukt:`, matchingError);
-      state.gpxPrepareProgress = `${progressPrefix} · alternatieve route…`;
+  async function routeGpxSegment(segment, index, total) {
+    const coordinates = segment.coordinates.map(point => [...point]);
+    const label = total > 1 ? `Traject ${index + 1}/${total}` : 'GPX op wegen leggen';
+    if (coordinates.length <= 3) {
+      state.gpxPrepareProgress = `${label}…`;
       renderUi();
-      try {
-        const route = await fallbackRouteFromGpx(segment.coordinates);
-        warnings.push(`${name} is via representatieve routepunten benaderd.`);
-        return { route, method: 'routepunten' };
-      } catch (fallbackError) {
-        console.warn(`Alternatieve route van ${name} mislukt:`, fallbackError);
-        const distance = turf.length(turf.lineString(segment.coordinates), { units: 'kilometers' }) * 1000;
-        warnings.push(`${name} kon niet op wegen worden geplaatst en gebruikt daarom de oorspronkelijke GPX-lijn.`);
-        return { route: { coordinates: segment.coordinates.map(point => [...point]), distance, time: 0, instructions: [] }, method: 'oorspronkelijke lijn' };
-      }
+      return { route: await calculateRoute([coordinates[0], coordinates.at(-1)]), method: 'routering via eindpunten' };
+    }
+    try {
+      return { route: await mapMatchGpx(coordinates, { label }), method: 'kaartmatching' };
+    } catch (matchingError) {
+      console.warn(`${label}: kaartmatching mislukt; probeer route via representatieve punten.`, matchingError);
+      state.gpxPrepareProgress = `${label} · alternatieve berekening…`;
+      renderUi();
+      return { route: await fallbackRouteFromGpx(coordinates), method: 'route via hoofdpunten' };
     }
   }
 
-  async function buildCombinedGpxRoute(segments, options = {}) {
+  async function buildRouteFromGpxSegments(segments) {
     ensureKey();
-    const ordered = orderGpxSegmentsForDriving(segments, options);
-    if (!ordered.length) throw new Error('Er zijn geen bruikbare GPX-trajecten geselecteerd.');
-    const warnings = [];
-    const combinedCoordinates = [];
+    const ordered = orderedGpxSegmentsForJoin(segments);
+    if (!ordered.length) throw new Error('Selecteer minimaal één bruikbaar GPX-traject.');
 
+    const routeParts = [];
+    const methods = new Set();
+    const warnings = [];
     for (let index = 0; index < ordered.length; index += 1) {
-      const segmentCoordinates = ordered[index].coordinates.map(point => [...point]);
-      if (!combinedCoordinates.length) {
-        combinedCoordinates.push(...segmentCoordinates);
-        continue;
+      const prepared = await routeGpxSegment(ordered[index], index, ordered.length);
+      methods.add(prepared.method);
+      if (prepared.method !== 'kaartmatching') {
+        warnings.push(`${ordered[index].name || `Traject ${index + 1}`} is via representatieve routepunten berekend.`);
       }
 
-      const from = combinedCoordinates.at(-1);
-      const to = segmentCoordinates[0];
-      const gapMeters = turf.distance(turf.point(from), turf.point(to), { units: 'meters' });
-      if (gapMeters > 30) {
-        state.gpxPrepareProgress = `Opening ${index}/${ordered.length - 1} over de weg verbinden…`;
-        renderUi();
-        try {
-          const connector = await calculateRoute([from, to]);
-          const overlapStart = turf.distance(turf.point(from), turf.point(connector.coordinates[0]), { units: 'meters' }) < 25;
-          const connectorCoordinates = overlapStart ? connector.coordinates.slice(1) : connector.coordinates;
-          combinedCoordinates.push(...connectorCoordinates);
-        } catch (connectorError) {
-          console.warn('Verbinding tussen GPX-trajecten mislukt:', connectorError);
-          combinedCoordinates.push(to);
-          warnings.push(`Een opening van ${fmtDistance(gapMeters)} kon niet afzonderlijk over wegen worden verbonden. De eindcontrole probeert deze alsnog in de rijroute op te nemen.`);
+      if (routeParts.length) {
+        const previousEnd = routeParts.at(-1).coordinates.at(-1);
+        const nextStart = prepared.route.coordinates[0];
+        const gapMeters = turf.distance(turf.point(previousEnd), turf.point(nextStart), { units: 'kilometers' }) * 1000;
+        if (gapMeters > 25) {
+          state.gpxPrepareProgress = `Verbinding ${index}/${ordered.length - 1} over de weg berekenen…`;
+          renderUi();
+          try {
+            const connector = await calculateRoute([previousEnd, nextStart]);
+            routeParts.push(connector);
+          } catch (connectorError) {
+            const fromLabel = ordered[index - 1].name || `traject ${index}`;
+            const toLabel = ordered[index].name || `traject ${index + 1}`;
+            throw new Error(`De lege ruimte tussen “${fromLabel}” en “${toLabel}” kon niet over het wegennet worden verbonden: ${connectorError.message}`);
+          }
         }
       }
-
-      const overlap = turf.distance(turf.point(combinedCoordinates.at(-1)), turf.point(segmentCoordinates[0]), { units: 'meters' }) < 25;
-      combinedCoordinates.push(...(overlap ? segmentCoordinates.slice(1) : segmentCoordinates));
+      routeParts.push(prepared.route);
     }
 
-    if (combinedCoordinates.length < 2) throw new Error('De geselecteerde GPX-trajecten bevatten te weinig punten.');
-
-    let route;
-    let method = 'kaartmatching';
-    try {
-      route = await mapMatchGpx(combinedCoordinates, {
-        name: state.gpxDocument?.fileName || 'Samengestelde GPX',
-        progressPrefix: 'Samengestelde GPX op wegen plaatsen',
-        maxPoints: 3200
-      });
-    } catch (matchingError) {
-      console.warn('Kaartmatching van de samengestelde GPX mislukt:', matchingError);
-      state.gpxPrepareProgress = 'Alternatieve rijroute door GPX-hoofdpunten maken…';
-      renderUi();
-      try {
-        route = await fallbackRouteFromGpx(combinedCoordinates);
-        method = 'benadering via routepunten';
-        warnings.push('De volledige kaartmatching lukte niet; de rijroute is daarom via representatieve GPX-punten opgebouwd.');
-      } catch (fallbackError) {
-        console.warn('Alternatieve samengestelde route mislukt:', fallbackError);
-        const distance = turf.length(turf.lineString(combinedCoordinates), { units: 'kilometers' }) * 1000;
-        route = { coordinates: combinedCoordinates, distance, time: 0, instructions: [] };
-        method = 'oorspronkelijke GPX-lijn';
-        warnings.push('De route kon niet volledig door GraphHopper worden verwerkt. De oorspronkelijke samengestelde GPX-lijn wordt gebruikt.');
-      }
-    }
-
-    return { route, ordered, warnings, methods: [method] };
+    const route = mergeMatchedRouteParts(routeParts);
+    if (route.coordinates.length < 2) throw new Error('De gekozen GPX-trajecten leverden geen bruikbare rijroute op.');
+    return {
+      route,
+      ordered,
+      warnings,
+      method: ordered.length > 1
+        ? `${ordered.length} trajecten samengevoegd (${[...methods].join(' + ')})`
+        : [...methods][0] || 'route over het wegennet'
+    };
   }
 
-  function setGpxPrepareButtonsLoading(active) {
-    ['prepareGpxRoute', 'prepareEditedGpx', 'useSelectedGpxSegment'].forEach(id => {
-      const button = $(id);
-      if (!button) return;
-      button.disabled = active;
-      button.classList.toggle('is-loading', active);
-      button.setAttribute('aria-busy', active ? 'true' : 'false');
-    });
+  function applyPreparedGpxRoute(prepared) {
+    const result = cloneRouteData(prepared.route);
+    state.gpxRoutePrepared = true;
+    state.gpxPreparedMethod = prepared.method;
+    state.gpxPrepareWarnings = prepared.warnings || [];
+    state.gpxBaseRoute = cloneRouteData(result);
+    state.gpxActiveSegmentIds = (prepared.ordered || []).map(segment => segment.id).filter(id => id !== undefined);
+    initialiseGpxEditorCoordinates(result.coordinates);
+    drawRoute(result, 'gpx', { skipOverview: true });
   }
 
   async function prepareGpxRoute(options = {}) {
-    if (state.gpxRoutePreparing) return;
-    let segments = Array.isArray(options.segments) ? options.segments : null;
-    if (!segments?.length) {
-      if (options.fromEditor && state.gpxEditor.editCoordinates.length >= 2) {
-        segments = [{ id: 'bewerkt', name: `${state.gpxEditor.fileName || 'GPX'} bewerkt`, coordinates: state.gpxEditor.editCoordinates.map(point => [...point]) }];
-      } else if (state.mode === 'gpx' && state.gpxEditor.editCoordinates.length >= 2 && state.gpxAnalysis.segments.length <= 1) {
-        segments = [{ id: state.gpxAnalysis.segments[0]?.id || 'gpx', name: state.gpxEditor.fileName || 'GPX-route', coordinates: state.gpxEditor.editCoordinates.map(point => [...point]) }];
-      } else {
-        segments = state.gpxAnalysis.segments;
-      }
-    }
-    segments = (segments || []).filter(segment => segment.coordinates?.length >= 2);
-    if (!segments.length) return status('Laad eerst één of meer bruikbare GPX-trajecten.', { error: true });
+    if (state.gpxRoutePreparing) return false;
+    const explicitSegments = Array.isArray(options.segments) ? options.segments.filter(Boolean) : null;
+    const preferredSegments = preferredGpxSegments();
+    const preferredIds = preferredSegments.map(segment => String(segment.id)).sort();
+    const activeIds = (state.gpxActiveSegmentIds || []).map(id => String(id)).sort();
+    const selectionMatchesActive = preferredIds.length === activeIds.length && preferredIds.every((id, index) => id === activeIds[index]);
+    const useActiveEditedRoute = !explicitSegments
+      && state.mode === 'gpx'
+      && state.gpxEditor.editCoordinates.length >= 2
+      && (selectionMatchesActive || !preferredSegments.length);
+    const segments = explicitSegments || (useActiveEditedRoute ? null : preferredSegments);
 
-    const token = state.gpxPrepareToken + 1;
-    state.gpxPrepareToken = token;
+    if (!useActiveEditedRoute && (!segments || !segments.length)) {
+      status('Selecteer minimaal één GPX-traject.', { error: true });
+      return false;
+    }
+
     state.gpxRoutePreparing = true;
-    state.gpxPrepareProgress = segments.length > 1 ? `${segments.length} trajecten voorbereiden…` : 'GPX voorbereiden…';
-    setGpxPrepareButtonsLoading(true);
+    state.gpxPrepareProgress = 'Rijroute voorbereiden…';
+    ['prepareGpxRoute', 'prepareEditedGpx', 'useSelectedGpxSegment'].forEach(id => {
+      const button = $(id);
+      if (button) { button.disabled = true; button.classList.add('is-loading'); button.setAttribute('aria-busy', 'true'); }
+    });
     renderUi();
     try {
-      const preserveOrder = options.preserveOrder ?? Boolean(state.gpxDocument?.preserveOrder);
-      const result = await buildCombinedGpxRoute(segments, { preserveOrder });
-      if (token !== state.gpxPrepareToken) return;
-
-      state.gpxRoutePrepared = true;
-      state.gpxPreparedMethod = result.methods.join(' + ') || 'route op wegen';
-      state.gpxPreparedSegmentIds = result.ordered.map(segment => segment.id ?? segment.name);
-      state.gpxPrepareWarnings = result.warnings;
-      state.gpxBaseRoute = cloneRouteData(result.route);
-      const routeCoordinates = result.route.coordinates.map(point => [...point]);
-      state.gpxEditor = {
-        active: false,
-        fileName: state.gpxDocument?.fileName || 'route',
-        originalCoordinates: routeCoordinates.map(point => [...point]),
-        editCoordinates: routeCoordinates.map(point => [...point]),
-        selectedIndices: new Set(),
-        selectedMarker: null,
-        boxMode: false,
-        addMode: false,
-        boxStart: null,
-        boxElement: null,
-        pointerId: null,
-        history: []
-      };
-      state.startPoint = routeCoordinates[0];
-      state.destinationPoint = routeCoordinates.at(-1);
-      state.startLabel = 'Start GPX-rijroute';
-      state.destinationLabel = 'Einde GPX-rijroute';
-      setMarker('start', state.startPoint);
-      setMarker('destination', state.destinationPoint);
-      drawRoute(result.route, 'gpx', { skipOverview: true });
-      closeGpxAnalysis();
-      closeGpxEditor();
-      showOverview();
-      if (result.warnings.length) console.warn('GPX-rijroute met aandachtspunten:', result.warnings);
-    } catch (error) {
-      if (token === state.gpxPrepareToken) status(error.message || 'De GPX kon niet als rijroute worden opgebouwd.', { error: true, duration: 7500 });
-    } finally {
-      if (token === state.gpxPrepareToken) {
-        state.gpxRoutePreparing = false;
-        state.gpxPrepareProgress = '';
-        setGpxPrepareButtonsLoading(false);
-        renderUi();
+      let prepared;
+      if (useActiveEditedRoute) {
+        const activeSegment = {
+          id: state.gpxActiveSegmentIds.length === 1 ? state.gpxActiveSegmentIds[0] : 'bewerkt',
+          name: state.gpxEditor.fileName || 'Bewerkte GPX',
+          coordinates: state.gpxEditor.editCoordinates.map(point => [...point])
+        };
+        prepared = await buildRouteFromGpxSegments([activeSegment]);
+      } else {
+        prepared = await buildRouteFromGpxSegments(segments);
       }
+      applyPreparedGpxRoute(prepared);
+      if (options.closeAnalysisOnSuccess) closeGpxAnalysis();
+      showOverview();
+      return true;
+    } catch (error) {
+      invalidatePreparedGpx();
+      status(error.message, { error: true, duration: 9000 });
+      return false;
+    } finally {
+      state.gpxRoutePreparing = false;
+      state.gpxPrepareProgress = '';
+      ['prepareGpxRoute', 'prepareEditedGpx', 'useSelectedGpxSegment'].forEach(id => {
+        const button = $(id);
+        if (button) { button.disabled = false; button.classList.remove('is-loading'); button.setAttribute('aria-busy', 'false'); }
+      });
+      renderUi();
     }
   }
 
+  async function prepareSelectedGpxSegments() {
+    const selected = selectedGpxSegments();
+    if (!selected.length) return status('Selecteer minimaal één traject om een rijroute te maken.', { error: true });
+    await prepareGpxRoute({ segments: selected, closeAnalysisOnSuccess: true });
+  }
+
   async function prepareEditedGpxRoute() {
-    const coordinates = state.gpxEditor.editCoordinates.map(point => [...point]);
-    if (coordinates.length < 2) return status('De bewerkte GPX bevat te weinig punten.', { error: true });
     closeGpxEditor();
-    await prepareGpxRoute({
-      fromEditor: true,
-      preserveOrder: true,
-      segments: [{ id: 'bewerkt', name: `${state.gpxEditor.fileName || 'GPX'} bewerkt`, coordinates }]
-    });
+    await prepareGpxRoute();
   }
 
   function setMarker(type, point) {
@@ -1291,6 +1281,7 @@
         state.gpsStatus = 'error';
         state.gpsError = 'Geen recente GPS-positie ontvangen.';
         renderGpsIndicator();
+        if ($('gpxStartSheet') && !$('gpxStartSheet').hidden) updateGpxStartChoiceDistances();
       }
     }, 19000);
   }
@@ -1302,6 +1293,7 @@
     state.watchId = null;
     state.pendingNavigationStart = false;
     state.pendingGpxStartStrategy = null;
+    state.gpxStartWaiting = false;
     state.gpsStatus = 'idle';
     state.gpsError = '';
     clearGpsWatchdog();
@@ -1318,7 +1310,12 @@
       state.gpsStatus = 'error';
       state.gpsError = 'Deze browser ondersteunt geen locatiebepaling.';
       renderGpsIndicator();
-      status(state.gpsError, { error: true });
+      if ($('gpxStartSheet') && !$('gpxStartSheet').hidden) {
+        setGpxStartFeedback(state.gpsError, { error: true });
+        updateGpxStartChoiceDistances();
+      } else {
+        status(state.gpsError, { error: true });
+      }
       return;
     }
     state.gpsStatus = 'searching';
@@ -1340,22 +1337,40 @@
         if (state.pendingNavigationStart && state.route) {
           const strategy = state.pendingGpxStartStrategy;
           state.pendingNavigationStart = false;
-          state.pendingGpxStartStrategy = null;
-          if (strategy) startGpxWithStrategy(strategy).catch(error => status(error.message, { error: true, duration: 7000 }));
-          else beginGpsNavigation();
+          if (strategy) {
+            state.gpxStartWaiting = false;
+            updateGpxStartButtons();
+            startGpxWithStrategy(strategy).catch(error => {
+              state.gpxStartWaiting = false;
+              if ($('gpxStartSheet') && !$('gpxStartSheet').hidden) {
+                setGpxStartFeedback(error.message, { error: true, retry: true });
+              } else {
+                status(error.message, { error: true, duration: 8000 });
+              }
+            });
+          } else {
+            state.pendingGpxStartStrategy = null;
+            beginGpsNavigation();
+          }
         }
         if ($('gpxStartSheet') && !$('gpxStartSheet').hidden) updateGpxStartChoiceDistances();
         renderGpsIndicator();
       },
       error => {
         state.pendingNavigationStart = false;
+        state.gpxStartWaiting = false;
         state.gpsStatus = 'error';
         state.gpsError = gpsErrorMessage(error);
         if (state.watchId !== null) navigator.geolocation.clearWatch(state.watchId);
         state.watchId = null;
         clearGpsWatchdog();
         renderGpsIndicator();
-        status(state.gpsError, { error: true, duration: 7000 });
+        if ($('gpxStartSheet') && !$('gpxStartSheet').hidden) {
+          setGpxStartFeedback(state.gpsError, { error: true, retry: true });
+          updateGpxStartChoiceDistances();
+        } else {
+          status(state.gpsError, { error: true, duration: 7000 });
+        }
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
     );
@@ -1398,13 +1413,46 @@
     status('Navigatie gestart');
   }
 
+  function updateGpxStartButtons() {
+    const busy = Boolean(state.gpxStartWaiting);
+    ['gpxNavigateToStart', 'gpxJoinNearest'].forEach(id => {
+      const button = $(id);
+      if (!button) return;
+      button.disabled = busy;
+      button.setAttribute('aria-busy', busy ? 'true' : 'false');
+    });
+  }
+
+  function setGpxStartFeedback(text, options = {}) {
+    const feedback = $('gpxStartFeedback');
+    const retry = $('gpxRetryGps');
+    if (!feedback) return;
+    feedback.hidden = !text;
+    feedback.classList.toggle('is-error', options.error === true);
+    feedback.classList.toggle('is-loading', options.loading === true);
+    if ($('gpxStartFeedbackText')) $('gpxStartFeedbackText').textContent = text || '';
+    if (retry) retry.hidden = options.retry !== true;
+    updateGpxStartButtons();
+  }
+
   function updateGpxStartChoiceDistances() {
     const base = state.gpxBaseRoute || state.route;
     const startText = $('gpxStartDistanceText');
     const nearestText = $('gpxNearestDistanceText');
-    if (!base?.coordinates?.length || !state.current || state.gpsStatus !== 'active') {
-      if (startText) startText.textContent = 'GPS wordt gebruikt zodra je een keuze maakt';
-      if (nearestText) nearestText.textContent = 'GPS wordt gebruikt zodra je een keuze maakt';
+    if (!base?.coordinates?.length) {
+      if (startText) startText.textContent = 'Rijroute is nog niet gereed';
+      if (nearestText) nearestText.textContent = 'Rijroute is nog niet gereed';
+      return;
+    }
+    if (!state.current || state.gpsStatus !== 'active') {
+      const text = state.gpsStatus === 'error' ? 'GPS-locatie niet beschikbaar' : 'GPS-locatie wordt opgehaald…';
+      if (startText) startText.textContent = text;
+      if (nearestText) nearestText.textContent = text;
+      if (state.gpsStatus === 'error') {
+        setGpxStartFeedback(state.gpsError || 'De GPS-locatie kon niet worden opgehaald.', { error: true, retry: true });
+      } else {
+        setGpxStartFeedback('Even wachten terwijl joepjoepGO je huidige locatie bepaalt.', { loading: true });
+      }
       return;
     }
     const current = turf.point(state.current);
@@ -1413,37 +1461,44 @@
     const toNearest = turf.distance(current, nearest, { units: 'kilometers' });
     if (startText) startText.textContent = `Startpunt op ongeveer ${fmtDistance(toStart * 1000)} hemelsbreed`;
     if (nearestText) nearestText.textContent = `Dichtstbijzijnde instapplek op ongeveer ${fmtDistance(toNearest * 1000)} hemelsbreed`;
-  }
-
-  function setGpxStartLoading(active, label = '') {
-    state.gpxStartLoading = Boolean(active);
-    const buttons = [$('gpxNavigateToStart'), $('gpxJoinNearest')].filter(Boolean);
-    buttons.forEach(button => {
-      button.disabled = state.gpxStartLoading;
-      button.classList.toggle('is-loading', state.gpxStartLoading);
-      button.setAttribute('aria-busy', state.gpxStartLoading ? 'true' : 'false');
-    });
-    if ($('gpxStartProgress')) {
-      $('gpxStartProgress').hidden = !state.gpxStartLoading;
-      $('gpxStartProgress').textContent = label || 'Route naar de GPX berekenen…';
-    }
+    if (!state.gpxStartWaiting) setGpxStartFeedback('');
   }
 
   function openGpxStartSheet() {
     if (!$('gpxStartSheet')) return;
-    closeSettings();
-    closeFuelSheet();
-    updateGpxStartChoiceDistances();
-    setGpxStartLoading(false);
+    state.gpxStartWaiting = false;
     $('gpxStartSheet').hidden = false;
     $('backdrop').hidden = false;
-    window.requestAnimationFrame(() => map.resize());
+    if (!state.current || state.gpsStatus !== 'active') startGpsWatch();
+    updateGpxStartButtons();
+    updateGpxStartChoiceDistances();
   }
 
-  function closeGpxStartSheet() {
-    setGpxStartLoading(false);
+  function closeGpxStartSheet(options = {}) {
     if ($('gpxStartSheet')) $('gpxStartSheet').hidden = true;
+    state.gpxStartWaiting = false;
+    updateGpxStartButtons();
+    setGpxStartFeedback('');
+    if (options.cancelPending !== false) {
+      state.pendingNavigationStart = false;
+      state.pendingGpxStartStrategy = null;
+    }
     syncBackdrop();
+  }
+
+  function retryGpxGps() {
+    if (state.watchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.watchId);
+      state.watchId = null;
+    }
+    clearGpsWatchdog();
+    state.gpsError = '';
+    state.gpsStatus = 'idle';
+    state.gpxStartWaiting = Boolean(state.pendingGpxStartStrategy);
+    if (state.gpxStartWaiting) state.pendingNavigationStart = true;
+    setGpxStartFeedback('GPS-locatie opnieuw ophalen…', { loading: true });
+    startGpsWatch();
+    updateGpxStartChoiceDistances();
   }
 
   function adjustInstructions(instructions, offset, cutIndex = 0) {
@@ -1494,81 +1549,80 @@
   }
 
   async function startGpxWithStrategy(strategy) {
-    if (state.gpxStartLoading) return;
+    if (state.gpxStartWaiting) return;
     const base = cloneRouteData(state.gpxBaseRoute || state.route);
-    if (!base || base.coordinates.length < 2 || !state.gpxRoutePrepared) throw new Error('Maak eerst één rijroute van de GPX-trajecten.');
+    if (!base || base.coordinates.length < 2) throw new Error('De GPX-rijroute is niet gereed.');
     state.gpxStartStrategy = strategy;
 
     if (!state.current || state.gpsStatus !== 'active') {
-      closeGpxStartSheet();
       state.pendingNavigationStart = true;
       state.pendingGpxStartStrategy = strategy;
+      state.gpxStartWaiting = true;
+      updateGpxStartButtons();
+      setGpxStartFeedback('GPS-locatie ophalen voordat de aanrijroute wordt berekend…', { loading: true });
       startGpsWatch();
-      renderGpsIndicator();
+      updateGpxStartChoiceDistances();
       return;
     }
 
-    setGpxStartLoading(true, strategy === 'start' ? 'Route naar het startpunt berekenen…' : 'Dichtstbijzijnde instappunt berekenen…');
-    try {
-      let remaining = base;
-      let joinPoint = base.coordinates[0];
-      if (strategy === 'nearest') {
-        const nearest = turf.nearestPointOnLine(turf.lineString(base.coordinates), turf.point(state.current), { units: 'kilometers' });
-        const locationKm = Number(nearest.properties.location || 0);
-        remaining = trimRouteFromKm(base, locationKm);
-        joinPoint = remaining.coordinates[0];
-      }
-
-      const accessDistance = turf.distance(turf.point(state.current), turf.point(joinPoint), { units: 'kilometers' });
-      if (accessDistance > 0.05) {
-        const access = await calculateRoute([state.current, joinPoint]);
-        drawRoute(combineAccessAndGpx(access, remaining), 'gpx', { skipOverview: true });
-      } else {
-        drawRoute(remaining, 'gpx', { skipOverview: true });
-      }
-      closeGpxStartSheet();
-      beginGpsNavigation();
-    } finally {
-      setGpxStartLoading(false);
+    state.gpxStartWaiting = true;
+    updateGpxStartButtons();
+    setGpxStartFeedback(strategy === 'nearest' ? 'Dichtstbijzijnde instapplek bepalen…' : 'Aanrijroute naar het startpunt berekenen…', { loading: true });
+    let remaining = base;
+    let joinPoint = base.coordinates[0];
+    if (strategy === 'nearest') {
+      const nearest = turf.nearestPointOnLine(turf.lineString(base.coordinates), turf.point(state.current), { units: 'kilometers' });
+      const locationKm = Number(nearest.properties.location || 0);
+      remaining = trimRouteFromKm(base, locationKm);
+      joinPoint = remaining.coordinates[0];
     }
+
+    const accessDistance = turf.distance(turf.point(state.current), turf.point(joinPoint), { units: 'kilometers' });
+    if (accessDistance > 0.05) {
+      const access = await calculateRoute([state.current, joinPoint]);
+      drawRoute(combineAccessAndGpx(access, remaining), 'gpx', { skipOverview: true });
+    } else {
+      drawRoute(remaining, 'gpx', { skipOverview: true });
+    }
+    state.pendingNavigationStart = false;
+    state.pendingGpxStartStrategy = null;
+    state.gpxStartWaiting = false;
+    closeGpxStartSheet({ cancelPending: false });
+    beginGpsNavigation();
   }
 
   async function startNavigation() {
-    if (state.navigationStarting) return;
-    state.navigationStarting = true;
-    renderUi();
-    try {
-      if (state.gpxDocument) {
-        if (!state.gpxRoutePrepared || !state.route?.coordinates?.length) {
-          throw new Error('Maak eerst één rijroute van de GPX-trajecten.');
-        }
-        if (isDesktop()) {
-          drawRoute(cloneRouteData(state.gpxBaseRoute || state.route), 'gpx', { skipOverview: true });
-          if ($('developerPanel')) $('developerPanel').hidden = false;
-          return;
-        }
-        openGpxStartSheet();
-        return;
+    if (state.gpxDocument) {
+      if (!state.gpxRoutePrepared) {
+        const prepared = await prepareGpxRoute();
+        if (!prepared || !state.gpxRoutePrepared) return;
       }
-
-      if (!state.route || state.route.coordinates.length < 2) throw new Error('Bereken eerst een route.');
+      if (!state.route || state.route.coordinates.length < 2) {
+        return status('De GPX kon niet als rijroute worden opgebouwd.', { error: true });
+      }
       if (isDesktop()) {
+        drawRoute(cloneRouteData(state.gpxBaseRoute || state.route), 'gpx', { skipOverview: true });
         if ($('developerPanel')) $('developerPanel').hidden = false;
         return;
       }
-      if (state.watchId !== null && state.current && state.gpsStatus === 'active') {
-        beginGpsNavigation();
-        return;
-      }
-      state.pendingNavigationStart = true;
-      startGpsWatch();
-      renderGpsIndicator();
-    } catch (error) {
-      status(error.message, { error: true, duration: 6500 });
-    } finally {
-      state.navigationStarting = false;
-      renderUi();
+      openGpxStartSheet();
+      return;
     }
+
+    if (!state.route || state.route.coordinates.length < 2) {
+      return status('Bereken eerst een route.', { error: true });
+    }
+    if (isDesktop()) {
+      if ($('developerPanel')) $('developerPanel').hidden = false;
+      return;
+    }
+    if (state.watchId !== null && state.current && state.gpsStatus === 'active') {
+      beginGpsNavigation();
+      return;
+    }
+    state.pendingNavigationStart = true;
+    startGpsWatch();
+    renderGpsIndicator();
   }
 
   function updateNavigation(point, speedMps, heading, knownProgressKm) {
@@ -1869,16 +1923,17 @@
 
     parts.forEach((part, partIndex) => {
       if (!part.coordinates?.length) return;
+      const partName = part.sourceFile
+        ? (part.name && part.name !== part.sourceFile ? `${part.sourceFile} · ${part.name}` : part.sourceFile)
+        : (part.name || `Traject ${partIndex + 1}`);
       let current = [part.coordinates[0]];
-      let splitIndex = 1;
       let reason = part.type === 'tracksegment' ? 'GPX-tracksegment' : part.type === 'route' ? 'GPX-route' : 'GPX-punten';
 
       for (let i = 1; i < part.coordinates.length; i += 1) {
         const gapKm = turf.distance(turf.point(part.coordinates[i - 1]), turf.point(part.coordinates[i]), { units: 'kilometers' });
         if (gapKm > jumpThresholdKm) {
           if (current.length >= 2) {
-            segments.push({ coordinates: current, name: part.name, sourceFile: part.sourceFile || '', reason: `${reason}; verbindingssprong van ${gapKm.toFixed(1)} km`, sourcePartIndex: partIndex, splitIndex });
-            splitIndex += 1;
+            segments.push({ coordinates: current, name: partName, reason: `${reason}; verbindingssprong van ${gapKm.toFixed(1)} km`, sourcePartIndex: partIndex });
           }
           current = [part.coordinates[i]];
           reason = 'Na gedetecteerde verbindingssprong';
@@ -1886,7 +1941,7 @@
           current.push(part.coordinates[i]);
         }
       }
-      if (current.length >= 2) segments.push({ coordinates: current, name: part.name, sourceFile: part.sourceFile || '', reason, sourcePartIndex: partIndex, splitIndex });
+      if (current.length >= 2) segments.push({ coordinates: current, name: partName, reason, sourcePartIndex: partIndex });
     });
 
     return segments.map((segment, index) => ({
@@ -1896,6 +1951,8 @@
       distanceKm: turf.length(turf.lineString(segment.coordinates), { units: 'kilometers' })
     }));
   }
+
+
 
   function analysisMapPadding() {
     const sheet = $('gpxAnalysisSheet');
@@ -1936,15 +1993,48 @@
 
 
 
+  function markGpxSelectionChanged() {
+    const selectedIds = selectedGpxSegments().map(segment => String(segment.id)).sort();
+    const activeIds = (state.gpxActiveSegmentIds || []).map(id => String(id)).sort();
+    const matchesActive = selectedIds.length === activeIds.length && selectedIds.every((id, index) => id === activeIds[index]);
+    if (matchesActive) return;
+
+    invalidatePreparedGpx();
+    state.gpxActiveSegmentIds = [];
+    if (state.gpxDocument && !state.gpxEditor.active) {
+      state.route = null;
+      state.original = [];
+      state.mode = 'gpx-document';
+      state.progressKm = 0;
+      ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
+      setGpxPreview(state.gpxDocument.parts);
+      const ordered = orderedGpxSegmentsForJoin(selectedGpxSegments());
+      const first = ordered[0]?.coordinates?.[0];
+      const last = ordered.at(-1)?.coordinates?.at(-1);
+      if (first) { state.startPoint = first; setMarker('start', first); }
+      if (last) { state.destinationPoint = last; setMarker('destination', last); }
+    }
+  }
+
   function updateGpxAnalysisSelectionUi() {
     const count = state.gpxAnalysis.selectedIds.size;
     if ($('gpxSegmentSelectionCount')) $('gpxSegmentSelectionCount').textContent = count
       ? `${count} traject${count === 1 ? '' : 'en'} geselecteerd`
       : 'Geen trajecten geselecteerd';
     if ($('exportSelectedGpxSegments')) $('exportSelectedGpxSegments').disabled = count === 0;
-    if ($('useSelectedGpxSegment')) $('useSelectedGpxSegment').disabled = count === 0 || state.gpxRoutePreparing;
-    if ($('editSelectedGpxSegment')) $('editSelectedGpxSegment').disabled = count !== 1;
+    if ($('useSelectedGpxSegment')) {
+      const button = $('useSelectedGpxSegment');
+      button.disabled = count === 0 || state.gpxRoutePreparing;
+      button.textContent = state.gpxRoutePreparing
+        ? (state.gpxPrepareProgress || 'Rijroute maken…')
+        : count > 1
+          ? `Maak 1 rijroute van ${count} trajecten`
+          : 'Maak rijroute van traject';
+    }
+    if ($('editSelectedGpxSegment')) $('editSelectedGpxSegment').disabled = count !== 1 || state.gpxRoutePreparing;
   }
+
+
 
   function zoomToGpxSegment(segment) {
     const bounds = new maplibregl.LngLatBounds();
@@ -1963,22 +2053,23 @@
       ? ' Selecteer precies één traject en kies daarna Bewerk geselecteerd.'
       : '';
     $('gpxAnalysisSummary').textContent = segments.length === 1
-      ? `Er is één doorlopend traject gevonden. ${thresholdDescription}${editInstruction}`
-      : `${segments.length} afzonderlijke trajecten gevonden. ${thresholdDescription}${editInstruction || ' Selecteer één of meer trajecten om er één rijroute van te maken.'}`;
+      ? `Er is één doorlopend traject gevonden. ${thresholdDescription}${editInstruction || ' Je kunt dit traject direct omzetten naar een rijroute.'}`
+      : `${segments.length} afzonderlijke trajecten gevonden. ${thresholdDescription}${editInstruction || ' Selecteer één of meer trajecten; joepjoepGO legt ze afzonderlijk op het wegennet en berekent de ontbrekende verbindingen ertussen.'}`;
     list.innerHTML = '';
     segments.forEach(segment => {
       const row = document.createElement('div');
       row.className = 'gpx-analysis-row';
       row.dataset.segmentId = String(segment.id);
       const checked = state.gpxAnalysis.selectedIds.has(segment.id);
-      row.innerHTML = `<label class="gpx-segment-check" title="Selecteer traject"><input type="checkbox" ${checked ? 'checked' : ''} aria-label="Selecteer traject ${segment.id}"><span></span></label><span class="gpx-color-dot" style="background:${segment.color}"></span><div class="gpx-analysis-info"><strong>Traject ${segment.id}</strong><small>${escapeXml(segment.sourceFile ? `${segment.sourceFile} · ${segment.name}` : segment.name)} · ${segment.distanceKm.toFixed(1)} km · ${segment.coordinates.length} punten</small><small>${escapeXml(segment.reason)}</small></div><div class="gpx-analysis-row-actions"><button class="icon-button edit-segment" title="Bewerk dit traject">✎</button><button class="icon-button zoom-segment" title="Toon op kaart">⌖</button><button class="icon-button export-segment" title="Exporteer apart">⇩</button></div>`;
+      row.innerHTML = `<label class="gpx-segment-check" title="Selecteer traject"><input type="checkbox" ${checked ? 'checked' : ''} aria-label="Selecteer traject ${segment.id}"><span></span></label><span class="gpx-color-dot" style="background:${segment.color}"></span><div class="gpx-analysis-info"><strong>Traject ${segment.id}</strong><small>${escapeXml(segment.name)} · ${segment.distanceKm.toFixed(1)} km · ${segment.coordinates.length} punten</small><small>${escapeXml(segment.reason)}</small></div><div class="gpx-analysis-row-actions"><button class="icon-button edit-segment" title="Bewerk dit traject">✎</button><button class="icon-button zoom-segment" title="Toon op kaart">⌖</button><button class="icon-button export-segment" title="Exporteer apart">⇩</button></div>`;
       const checkbox = row.querySelector('input[type="checkbox"]');
       checkbox.onchange = () => {
         if (checkbox.checked) state.gpxAnalysis.selectedIds.add(segment.id);
         else state.gpxAnalysis.selectedIds.delete(segment.id);
         row.classList.toggle('selected', checkbox.checked);
+        markGpxSelectionChanged();
         updateGpxAnalysisSelectionUi();
-        showGpxAnalysisOnMap({ fit: false });
+        renderUi();
       };
       row.classList.toggle('selected', checked);
       row.querySelector('.edit-segment').onclick = event => { event.stopPropagation(); editGpxSegment(segment); };
@@ -2006,10 +2097,14 @@
     }
     persistSettings();
     state.gpxAnalysis.segments = analyseGpxParts(state.gpxAnalysis.sourceParts, state.gpxAnalysis.jumpThresholdMeters);
-    state.gpxAnalysis.selectedIds = new Set();
+    state.gpxAnalysis.selectedIds = state.gpxAnalysis.intent === 'edit'
+      ? new Set()
+      : new Set(state.gpxAnalysis.segments.map(segment => segment.id));
+    invalidatePreparedGpx();
+    state.gpxActiveSegmentIds = [];
     renderGpxAnalysis();
     showGpxAnalysisOnMap();
-    renderRoutePreview();
+    renderUi();
     const thresholdText = state.gpxAnalysis.jumpThresholdMeters === 0
       ? 'zonder automatische knipgrens'
       : `met een knipgrens van ${state.gpxAnalysis.jumpThresholdMeters.toLocaleString('nl-NL')} meter`;
@@ -2034,15 +2129,20 @@
     $('gpxAnalysisSheet').hidden = false;
     $('backdrop').hidden = isDesktop();
     if ($('gpxJumpThreshold')) $('gpxJumpThreshold').value = String(state.gpxAnalysis.jumpThresholdMeters);
-    rerunGpxAnalysis();
-    if (state.gpxAnalysis.intent === 'edit' && state.gpxAnalysis.segments.length === 1) {
-      state.gpxAnalysis.selectedIds = new Set([state.gpxAnalysis.segments[0].id]);
+
+    if (!state.gpxAnalysis.segments.length) {
+      rerunGpxAnalysis();
+    } else {
+      if (state.gpxAnalysis.intent === 'edit') {
+        const activeSegment = state.gpxActiveSegmentIds.length === 1
+          ? state.gpxAnalysis.segments.find(segment => String(segment.id) === String(state.gpxActiveSegmentIds[0]))
+          : null;
+        if (activeSegment) state.gpxAnalysis.selectedIds = new Set([activeSegment.id]);
+        else if (state.gpxAnalysis.segments.length === 1) state.gpxAnalysis.selectedIds = new Set([state.gpxAnalysis.segments[0].id]);
+      }
       renderGpxAnalysis();
-      showGpxAnalysisOnMap({ fit: false });
-    } else if ((state.gpxAnalysis.intent === 'prepare' || state.gpxAnalysis.intent === 'route') && state.gpxAnalysis.segments.length) {
-      state.gpxAnalysis.selectedIds = new Set(state.gpxAnalysis.segments.map(segment => segment.id));
-      renderGpxAnalysis();
-      showGpxAnalysisOnMap({ fit: false });
+      showGpxAnalysisOnMap();
+      renderUi();
     }
     window.requestAnimationFrame(() => map.resize());
   }
@@ -2107,12 +2207,16 @@
 
   function selectAllGpxSegments() {
     state.gpxAnalysis.selectedIds = new Set(state.gpxAnalysis.segments.map(segment => segment.id));
+    markGpxSelectionChanged();
     renderGpxAnalysis();
+    renderUi();
   }
 
   function clearGpxSegmentSelection() {
     state.gpxAnalysis.selectedIds.clear();
+    markGpxSelectionChanged();
     renderGpxAnalysis();
+    renderUi();
   }
 
 
@@ -2123,37 +2227,16 @@
     }
     const coordinates = segment.coordinates.map(point => [...point]);
     invalidatePreparedGpx();
+    state.gpxActiveSegmentIds = segment.id !== undefined ? [segment.id] : [];
     const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
-    state.gpxEditor = {
-      active: false,
-      fileName: state.gpxDocument?.fileName || 'route',
-      originalCoordinates: coordinates.map(point => [...point]),
-      editCoordinates: coordinates.map(point => [...point]),
-      selectedIndices: new Set(),
-      selectedMarker: null,
-      boxMode: false,
-      addMode: false,
-      boxStart: null,
-      boxElement: null,
-      pointerId: null,
-      history: []
-    };
-    state.startPoint = coordinates[0];
-    state.destinationPoint = coordinates[coordinates.length - 1];
-    state.startLabel = 'Start GPX';
-    state.destinationLabel = 'Einde GPX';
-    setMarker('start', coordinates[0]);
-    setMarker('destination', coordinates[coordinates.length - 1]);
+    initialiseGpxEditorCoordinates(coordinates);
     drawRoute({ coordinates, distance, time: 0, instructions: [] }, 'gpx', { skipOverview: options.skipOverview === true });
     renderUi();
     if (!options.skipOverview) showOverview();
-    status(`Traject ${segment.id || ''} is als route geselecteerd.`);
   }
 
   async function useSelectedGpxSegment() {
-    const selected = state.gpxAnalysis.segments.filter(segment => state.gpxAnalysis.selectedIds.has(segment.id));
-    if (!selected.length) return status('Selecteer minimaal één traject.', { error: true });
-    await prepareGpxRoute({ segments: selected, preserveOrder: false });
+    await prepareSelectedGpxSegments();
   }
 
   function editGpxSegment(segment) {
@@ -2394,26 +2477,48 @@
   }
 
   function reverseGpxRoute() {
-    if (!state.gpxDocument?.parts?.length) return;
-    const reversedParts = (state.gpxAnalysis.sourceParts.length ? state.gpxAnalysis.sourceParts : state.gpxDocument.parts)
+    if (state.mode === 'gpx' && state.gpxEditor.editCoordinates.length >= 2) {
+      pushGpxHistory();
+      state.gpxEditor.editCoordinates.reverse();
+      state.gpxEditor.selectedIndices.clear();
+      state.gpxActiveSegmentIds.reverse();
+      removeSelectedMarker();
+      invalidatePreparedGpx();
+      drawEditedGpx();
+      setMarker('start', state.gpxEditor.editCoordinates[0]);
+      setMarker('destination', state.gpxEditor.editCoordinates.at(-1));
+      state.startPoint = state.gpxEditor.editCoordinates[0];
+      state.destinationPoint = state.gpxEditor.editCoordinates.at(-1);
+      renderGpxEditorList();
+      showOverview();
+      return;
+    }
+
+    if (!state.gpxDocument || !state.gpxAnalysis.sourceParts.length) {
+      return status('Laad eerst een GPX-bestand.', { error: true });
+    }
+
+    const reversedParts = state.gpxAnalysis.sourceParts
       .slice()
       .reverse()
       .map(part => ({ ...cloneGpxPart(part), coordinates: part.coordinates.slice().reverse().map(point => [...point]) }));
-
-    invalidatePreparedGpx();
     state.gpxDocument.parts = reversedParts.map(cloneGpxPart);
-    state.gpxDocument.preserveOrder = true;
     state.gpxAnalysis.sourceParts = reversedParts.map(cloneGpxPart);
     state.gpxAnalysis.segments = analyseGpxParts(reversedParts, state.gpxAnalysis.jumpThresholdMeters);
-    state.gpxAnalysis.selectedIds.clear();
+    state.gpxAnalysis.selectedIds = new Set(state.gpxAnalysis.segments.map(segment => segment.id));
+    state.gpxActiveSegmentIds = [];
+    invalidatePreparedGpx();
     state.route = null;
     state.original = [];
     state.mode = 'gpx-document';
-    state.gpxEditor = { active: false, fileName: state.gpxDocument.fileName || 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, addMode: false, boxStart: null, boxElement: null, pointerId: null, history: [] };
     ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
-    if (state.startMarker) { state.startMarker.remove(); state.startMarker = null; }
-    if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
-    setGpxPreview(state.gpxAnalysis.segments);
+    setGpxPreview(reversedParts);
+    const first = reversedParts[0]?.coordinates?.[0];
+    const last = reversedParts.at(-1)?.coordinates?.at(-1);
+    if (first) setMarker('start', first);
+    if (last) setMarker('destination', last);
+    state.startPoint = first || null;
+    state.destinationPoint = last || null;
     renderUi();
     showOverview();
   }
@@ -2649,17 +2754,31 @@
     if (!files.length) return;
     const append = state.gpxAppendMode && Boolean(state.gpxDocument);
     state.gpxAppendMode = false;
-    const existingParts = append
-      ? ((state.gpxDocument.parts.length === 1 && state.gpxEditor.editCoordinates.length >= 2)
-        ? [{ ...cloneGpxPart(state.gpxDocument.parts[0]), coordinates: state.gpxEditor.editCoordinates.map(point => [...point]) }]
-        : state.gpxDocument.parts.map(cloneGpxPart))
-      : [];
-    const existingNames = append ? (state.gpxDocument.fileNames || [state.gpxDocument.fileName]).slice() : [];
+
+    let existingParts = [];
+    let existingNames = [];
+    if (append && state.gpxDocument) {
+      existingNames = (state.gpxDocument.fileNames || [state.gpxDocument.fileName]).slice();
+      const activeRouteCanReplaceDocument = state.mode === 'gpx'
+        && state.gpxEditor.editCoordinates.length >= 2
+        && (state.gpxRoutePrepared || gpxEditorHasChanges());
+      existingParts = activeRouteCanReplaceDocument
+        ? [{
+            name: state.gpxEditor.fileName || state.gpxDocument.fileName || 'Actieve GPX-route',
+            type: 'tracksegment',
+            reason: 'Actieve samengestelde of bewerkte GPX-route',
+            sourceFile: state.gpxDocument.fileName,
+            coordinates: state.gpxEditor.editCoordinates.map(point => [...point])
+          }]
+        : state.gpxDocument.parts.map(cloneGpxPart);
+    }
+
     const loadToken = state.gpxLoadToken + 1;
     state.gpxLoadToken = loadToken;
-    if (!append) clearRoute({ silent: true, preserveGps: false, keepLoadToken: true });
+    if (!append) clearRoute({ silent: true, preserveGps: true, keepLoadToken: true });
     state.entryMode = 'gpx';
     renderUi();
+
     try {
       const loadedParts = [];
       for (const file of files) {
@@ -2669,124 +2788,192 @@
         if (xml.querySelector('parsererror')) throw new Error(`${file.name} kon niet worden gelezen.`);
         const { parts } = parseGpx(xml);
         if (!parts.length) throw new Error(`Geen bruikbare routepunten gevonden in ${file.name}.`);
-        parts.forEach(part => loadedParts.push({ ...part, sourceFile: file.name.replace(/\.gpx$/i, ''), coordinates: part.coordinates.map(point => [...point]) }));
+        parts.forEach(part => loadedParts.push({
+          ...part,
+          sourceFile: file.name.replace(/\.gpx$/i, ''),
+          coordinates: part.coordinates.map(point => [...point])
+        }));
       }
 
       const clonedParts = existingParts.concat(loadedParts).map(cloneGpxPart);
       const fileNames = existingNames.concat(files.map(file => file.name.replace(/\.gpx$/i, '') || 'route'));
       const totalDistance = clonedParts.reduce((sum, part) => sum + turf.length(turf.lineString(part.coordinates), { units: 'kilometers' }) * 1000, 0);
       const totalPoints = clonedParts.reduce((sum, part) => sum + part.coordinates.length, 0);
-      const displayName = fileNames.length > 1 ? `${fileNames[0]} + ${fileNames.length - 1} GPX` : fileNames[0];
-      state.gpxDocument = { fileName: displayName || 'route', fileNames, parts: clonedParts, totalDistance, totalPoints, preserveOrder: false };
+      const uniqueNames = [...new Set(fileNames)];
+      const displayName = uniqueNames.length > 1 ? `${uniqueNames[0]} + ${uniqueNames.length - 1} GPX` : uniqueNames[0];
+      state.gpxDocument = { fileName: displayName || 'route', fileNames: uniqueNames, parts: clonedParts, totalDistance, totalPoints };
+      const analysedSegments = analyseGpxParts(clonedParts, state.gpxAnalysis.jumpThresholdMeters);
       state.gpxAnalysis = {
         sourceParts: clonedParts.map(cloneGpxPart),
-        segments: analyseGpxParts(clonedParts, state.gpxAnalysis.jumpThresholdMeters),
+        segments: analysedSegments,
         active: false,
         intent: null,
-        selectedIds: new Set(),
+        selectedIds: new Set(analysedSegments.map(segment => segment.id)),
         jumpThresholdMeters: state.gpxAnalysis.jumpThresholdMeters
       };
-      state.gpxEditor = { active: false, fileName: state.gpxDocument.fileName, originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, addMode: false, boxStart: null, boxElement: null, pointerId: null, history: [] };
+      state.gpxEditor.fileName = state.gpxDocument.fileName;
+      state.gpxActiveSegmentIds = [];
       state.startPoint = null;
       state.destinationPoint = null;
       state.startLabel = 'Start GPX';
       state.destinationLabel = 'Einde GPX';
       invalidatePreparedGpx();
-      $('startQuery').value = '';
-      $('destinationQuery').value = '';
+      if ($('startQuery')) $('startQuery').value = '';
+      if ($('destinationQuery')) $('destinationQuery').value = '';
 
-      state.route = null;
-      state.original = [];
-      state.mode = 'gpx-document';
-      ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
-      if (state.startMarker) { state.startMarker.remove(); state.startMarker = null; }
-      if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
+      setGpxPreview(clonedParts);
+      const bounds = partsBounds(clonedParts);
+      if (bounds) map.fitBounds(bounds, { padding: mapPaddingForOverview(), duration: 550, maxZoom: 16 });
 
-      if (state.gpxAnalysis.segments.length === 1) {
-        activateGpxSegment(state.gpxAnalysis.segments[0], { skipOverview: true });
+      if (analysedSegments.length === 1) {
+        activateGpxSegment(analysedSegments[0], { skipOverview: true });
       } else {
-        setGpxPreview(state.gpxAnalysis.segments);
+        state.route = null;
+        state.original = [];
+        state.mode = 'gpx-document';
+        ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
+        const ordered = orderedGpxSegmentsForJoin(analysedSegments);
+        const first = ordered[0]?.coordinates?.[0];
+        const last = ordered.at(-1)?.coordinates?.at(-1);
+        if (first) setMarker('start', first);
+        if (last) setMarker('destination', last);
+        state.startPoint = first || null;
+        state.destinationPoint = last || null;
+        renderUi();
       }
-      renderUi();
       showOverview();
     } catch (error) {
       if (loadToken === state.gpxLoadToken) {
-        if (!append) clearRoute({ silent: true, preserveGps: false, keepLoadToken: true });
-        status(error.message, { error: true, duration: 7000 });
+        if (!append) clearRoute({ silent: true, preserveGps: true, keepLoadToken: true });
+        status(error.message, { error: true, duration: 8000 });
       }
     } finally {
       event.target.value = '';
     }
   }
 
-  function physicalOrientation() {
-    return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+
+  const ORIENTATION_STEPS = [
+    { type: 'portrait-primary', layout: 'portrait', angle: 0, label: 'staand' },
+    { type: 'landscape-primary', layout: 'landscape', angle: 90, label: 'liggend rechtsom' },
+    { type: 'portrait-secondary', layout: 'portrait', angle: 180, label: 'ondersteboven' },
+    { type: 'landscape-secondary', layout: 'landscape', angle: 270, label: 'liggend linksom' }
+  ];
+
+  function normaliseOrientationAngle(value) {
+    const angle = Number(value);
+    if (!Number.isFinite(angle)) return 0;
+    return ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
+  }
+
+  function physicalOrientationAngle() {
+    const screenAngle = Number(screen.orientation?.angle);
+    if (Number.isFinite(screenAngle)) return normaliseOrientationAngle(screenAngle);
+    const legacyAngle = Number(window.orientation);
+    if (Number.isFinite(legacyAngle)) return normaliseOrientationAngle(legacyAngle);
+    return window.innerWidth > window.innerHeight ? 90 : 0;
+  }
+
+  function activeOrientationSpec() {
+    return ORIENTATION_STEPS[state.orientationStep] || ORIENTATION_STEPS[0];
+  }
+
+  function clearSoftwareRotationClasses() {
+    document.body.classList.remove('force-rotate-90', 'force-rotate-180', 'force-rotate-270');
+  }
+
+  function softwareRotationDelta() {
+    if (isDesktop()) return 0;
+    const target = activeOrientationSpec();
+    if (screen.orientation?.type === target.type) return 0;
+    return normaliseOrientationAngle(target.angle - physicalOrientationAngle());
   }
 
   function applyLayoutMode() {
-    const physical = physicalOrientation();
+    clearSoftwareRotationClasses();
+    document.body.classList.remove('orientation-step-0', 'orientation-step-1', 'orientation-step-2', 'orientation-step-3');
+
     if (isDesktop()) {
       state.layoutMode = 'landscape';
-      state.rotationFallback = false;
-    } else if (!state.layoutManual) {
-      state.layoutMode = physical;
-      state.rotationFallback = false;
+      document.body.classList.add('orientation-step-0');
+    } else {
+      const target = activeOrientationSpec();
+      state.layoutMode = target.layout;
+      document.body.classList.add(`orientation-step-${state.orientationStep}`);
+      const delta = softwareRotationDelta();
+      if (delta === 90) document.body.classList.add('force-rotate-90');
+      else if (delta === 180) document.body.classList.add('force-rotate-180');
+      else if (delta === 270) document.body.classList.add('force-rotate-270');
     }
 
-    const mismatch = state.layoutMode !== physical;
-    const allowSoftwareRotation = state.navigationActive && isMobileDevice() && state.rotationFallback && mismatch;
     document.body.classList.toggle('layout-portrait', state.layoutMode === 'portrait');
     document.body.classList.toggle('layout-landscape', state.layoutMode === 'landscape');
-    document.body.classList.toggle('force-rotate-cw', allowSoftwareRotation && state.layoutMode === 'landscape');
-    document.body.classList.toggle('force-rotate-ccw', allowSoftwareRotation && state.layoutMode === 'portrait');
 
     const button = $('layoutToggle');
     if (button) {
-      button.textContent = state.layoutMode === 'portrait' ? '↻' : '↺';
-      button.title = state.layoutMode === 'portrait' ? 'Draai naar liggende navigatie' : 'Draai naar staande navigatie';
+      const next = ORIENTATION_STEPS[(state.orientationStep + 1) % ORIENTATION_STEPS.length];
+      button.textContent = '↻';
+      button.title = `Draai 90° naar ${next.label}`;
       button.setAttribute('aria-label', button.title);
+      button.dataset.orientationStep = String(state.orientationStep);
     }
-    if (state.mapReady) window.setTimeout(() => map.resize(), 80);
+    if (state.mapReady) window.setTimeout(() => map.resize(), 100);
   }
 
-
-  async function tryNativeOrientationLock(mode) {
-    if (!isMobileDevice()) return false;
-    try {
-      if (!screen.orientation || typeof screen.orientation.lock !== 'function') return false;
-      await screen.orientation.lock(mode);
-      return true;
-    } catch (_) {
+  async function requestOrientationStep(step, options = {}) {
+    if (isDesktop()) {
+      state.orientationStep = 0;
+      state.orientationNativeLocked = false;
+      applyLayoutMode();
       return false;
     }
+
+    const requestedStep = ((Number(step) % ORIENTATION_STEPS.length) + ORIENTATION_STEPS.length) % ORIENTATION_STEPS.length;
+    state.orientationStep = requestedStep;
+    const requestToken = ++state.orientationRequestToken;
+    const target = ORIENTATION_STEPS[requestedStep];
+    let locked = false;
+
+    try {
+      if (screen.orientation && typeof screen.orientation.lock === 'function') {
+        await screen.orientation.lock(target.type);
+        locked = true;
+      }
+    } catch (error) {
+      if (!options.silent) console.debug(`Schermoriëntatie ${target.type} wordt softwarematig toegepast.`, error);
+    }
+
+    if (requestToken !== state.orientationRequestToken) return false;
+    state.orientationNativeLocked = locked;
+    applyLayoutMode();
+    return locked;
   }
 
   async function toggleLayoutMode() {
-    if (isDesktop()) return;
-    state.layoutManual = true;
-    state.layoutMode = state.layoutMode === 'portrait' ? 'landscape' : 'portrait';
-    const locked = await tryNativeOrientationLock(state.layoutMode);
-    state.rotationFallback = !locked;
-    persistSettings();
-    applyLayoutMode();
+    if (isDesktop() || !state.navigationActive) return;
+    await requestOrientationStep(state.orientationStep + 1);
   }
 
-
   function setNavigationMode(active) {
+    const wasActive = state.navigationActive;
     state.navigationActive = active;
     if (active) {
-      if (!state.layoutManual) state.layoutMode = physicalOrientation();
+      if (!wasActive) {
+        state.orientationStep = 0;
+        state.layoutMode = 'portrait';
+        state.orientationNativeLocked = false;
+        requestOrientationStep(0, { silent: true });
+      }
       if ($('developerPanel')) $('developerPanel').hidden = true;
       updatePauseButton();
       if (!state.navigationPaused) requestWakeLock();
     } else {
       state.navigationPaused = false;
       state.pendingNavigationStart = false;
-      state.layoutManual = false;
-      state.rotationFallback = false;
-      if (screen.orientation && typeof screen.orientation.unlock === 'function') {
-        try { screen.orientation.unlock(); } catch (_) {}
-      }
+      state.orientationStep = 0;
+      state.layoutMode = 'portrait';
+      state.orientationNativeLocked = false;
+      requestOrientationStep(0, { silent: true });
       releaseWakeLock();
     }
     renderUi();
@@ -3123,13 +3310,12 @@
     state.follow = false;
     state.pickingStart = false;
     state.pickingDestination = false;
-    state.layoutManual = false;
-    state.rotationFallback = false;
+    state.orientationStep = 0;
+    state.layoutMode = 'portrait';
+    state.orientationNativeLocked = false;
     state.simulation.lastRender = 0;
     map.getCanvas()?.classList.remove('map-pick-mode');
-    if (screen.orientation && typeof screen.orientation.unlock === 'function') {
-      try { screen.orientation.unlock(); } catch (_) {}
-    }
+    requestOrientationStep(0, { silent: true });
     if (!preserveGps) stopGpsWatch({ preservePosition: true });
     state.route = null;
     state.original = [];
@@ -3142,15 +3328,13 @@
     state.fuelCandidates = [];
     state.gpxRoutePreparing = false;
     state.gpxPrepareProgress = '';
-    state.gpxPrepareToken += 1;
     state.gpxRoutePrepared = false;
     state.gpxPreparedMethod = '';
-    state.gpxPreparedSegmentIds = [];
     state.gpxPrepareWarnings = [];
     state.gpxBaseRoute = null;
+    state.gpxActiveSegmentIds = [];
     state.gpxStartStrategy = null;
-    state.gpxStartLoading = false;
-    state.navigationStarting = false;
+    state.gpxStartWaiting = false;
     state.gpxAppendMode = false;
 
     state.gpxEditor.boxElement?.remove();
@@ -3158,7 +3342,7 @@
     document.body.classList.remove('gpx-editing', 'gpx-box-selecting', 'gpx-point-adding');
     const threshold = state.gpxAnalysis.jumpThresholdMeters;
     state.gpxEditor = { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, addMode: false, boxStart: null, boxElement: null, pointerId: null, history: [] };
-    state.gpxAnalysis = { sourceParts: [], segments: [], active: false, selectedIds: new Set(), jumpThresholdMeters: threshold };
+    state.gpxAnalysis = { sourceParts: [], segments: [], active: false, intent: null, selectedIds: new Set(), jumpThresholdMeters: threshold };
     state.gpxDocument = null;
 
     ['gpxEditorSheet','gpxAnalysisSheet','gpxStartSheet','fuelSheet','settingsSheet'].forEach(id => { if ($(id)) $(id).hidden = true; });
@@ -3299,7 +3483,7 @@
   bind('planRoute', 'click', planRoute);
   bind('replaceGpx', 'click', chooseGpxMode);
   bind('appendGpx', 'click', appendGpxMode);
-  bind('prepareGpxRoute', 'click', () => prepareGpxRoute());
+  bind('prepareGpxRoute', 'click', prepareGpxRoute);
   bind('reverseGpx', 'click', reverseGpxRoute);
   bind('gpxFile', 'change', loadGpx);
   bind('editGpx', 'click', openGpxEditor);
@@ -3311,7 +3495,7 @@
   bind('exportSelectedGpxSegments', 'click', exportSelectedGpxSegments);
   bind('selectAllGpxSegments', 'click', selectAllGpxSegments);
   bind('clearGpxSegmentSelection', 'click', clearGpxSegmentSelection);
-  bind('useSelectedGpxSegment', 'click', () => useSelectedGpxSegment().catch(error => status(error.message, { error: true, duration: 7000 })));
+  bind('useSelectedGpxSegment', 'click', useSelectedGpxSegment);
   bind('editSelectedGpxSegment', 'click', editSelectedGpxSegment);
   bind('closeGpxEditor', 'click', closeGpxEditor);
   bind('restoreGpx', 'click', restoreGpx);
@@ -3331,8 +3515,15 @@
   bind('layoutToggle', 'click', toggleLayoutMode);
   bind('closeFuelSheet', 'click', closeFuelSheet);
   bind('closeGpxStartSheet', 'click', closeGpxStartSheet);
-  bind('gpxNavigateToStart', 'click', () => startGpxWithStrategy('start').catch(error => status(error.message, { error: true, duration: 7000 })));
-  bind('gpxJoinNearest', 'click', () => startGpxWithStrategy('nearest').catch(error => status(error.message, { error: true, duration: 7000 })));
+  bind('gpxRetryGps', 'click', retryGpxGps);
+  bind('gpxNavigateToStart', 'click', () => startGpxWithStrategy('start').catch(error => {
+    state.gpxStartWaiting = false;
+    setGpxStartFeedback(error.message, { error: true, retry: state.gpsStatus !== 'active' });
+  }));
+  bind('gpxJoinNearest', 'click', () => startGpxWithStrategy('nearest').catch(error => {
+    state.gpxStartWaiting = false;
+    setGpxStartFeedback(error.message, { error: true, retry: state.gpsStatus !== 'active' });
+  }));
   bind('resumeNavigation', 'click', resumeNavigation);
   bind('stopNavigation', 'click', stopNavigation);
   bind('closeDeveloper', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = true; });
@@ -3357,8 +3548,9 @@
     if (!Number.isFinite(id)) return;
     if (state.gpxAnalysis.selectedIds.has(id)) state.gpxAnalysis.selectedIds.delete(id);
     else state.gpxAnalysis.selectedIds.add(id);
+    markGpxSelectionChanged();
     renderGpxAnalysis();
-    showGpxAnalysisOnMap({ fit: false });
+    renderUi();
     status(`Traject ${id} ${state.gpxAnalysis.selectedIds.has(id) ? 'geselecteerd' : 'gedeselecteerd'}.`);
   });
   map.on('mouseenter', 'gpx-analysis-lines', () => { if (state.gpxAnalysis.active) map.getCanvas().style.cursor = 'pointer'; });
@@ -3384,7 +3576,11 @@
   };
   window.addEventListener('resize', syncViewportLayout);
   screen.orientation?.addEventListener?.('change', syncViewportLayout);
+  document.addEventListener('pointerdown', () => {
+    requestOrientationStep(state.navigationActive ? state.orientationStep : 0, { silent: true });
+  }, { once: true, capture: true });
   renderUi();
+  requestOrientationStep(0, { silent: true });
   if ($('apiKey')) $('apiKey').value = state.apiKey;
   $('vehicleProfile').value = state.profile;
   $('autoFollow').checked = state.autoFollow;

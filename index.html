@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <link rel="manifest" href="./manifest.webmanifest?v=26" />
+  <link rel="manifest" href="./manifest.webmanifest?v=27" />
   <link rel="icon" href="./icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="./styles.css?v=26" />
+  <link rel="stylesheet" href="./styles.css?v=27" />
   <title>joepjoepGO</title>
 </head>
 <body>
@@ -16,7 +16,7 @@
   <div id="turnAlert" class="turn-alert" role="status" aria-live="polite" aria-label="Afslag binnen 500 meter" hidden>
     <span class="turn-alert-symbol" aria-hidden="true">!</span>
   </div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v26</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v27</div>
   <button id="settings" class="floating-button settings-button" title="Instellingen" aria-label="Instellingen">⚙</button>
   <button id="modeBack" class="floating-button mode-back-button" title="Terug naar startkeuze" aria-label="Terug naar startkeuze" hidden>←</button>
   <button id="layoutToggle" class="floating-button layout-toggle" title="Draai navigatiescherm" aria-label="Draai navigatiescherm" hidden>↻</button>
@@ -38,7 +38,7 @@
       </button>
       <button id="chooseGpxMode" class="start-choice-button gpx-choice" type="button">
         <span class="start-choice-icon" aria-hidden="true">↗</span>
-        <span><strong>Open een GPX</strong><small>Bekijk, analyseer, bewerk of volg een routebestand.</small></span>
+        <span><strong>Open een GPX</strong><small>Open één of meerdere bestanden, combineer trajecten en maak een rijroute.</small></span>
       </button>
     </div>
   </section>
@@ -213,7 +213,7 @@
     <div class="panel-title-row sheet-title-row">
       <div>
         <h2>GPX-analyse</h2>
-        <p class="editor-subtitle">Selecteer één of meer trajecten. joepjoepGO zet ze op wegen en vult openingen zo goed mogelijk op.</p>
+        <p class="editor-subtitle">Losse tracks, tracksegmenten en grote sprongen krijgen een eigen kleur. Selecteer één of meer delen om er één rijroute van te maken.</p>
       </div>
       <button id="closeGpxAnalysis" class="text-button">Sluiten</button>
     </div>
@@ -235,7 +235,7 @@
     <div class="gpx-analysis-actions">
       <button id="useSelectedGpxSegment" class="control-button primary" disabled>Maak rijroute van selectie</button>
       <button id="editSelectedGpxSegment" class="control-button" disabled>Bewerk geselecteerd</button>
-      <button id="exportSelectedGpxSegments" class="control-button primary" disabled>Maak 1 GPX van selectie</button>
+      <button id="exportSelectedGpxSegments" class="control-button" disabled>Exporteer selectie als GPX</button>
       <button id="exportAllGpxSegments" class="control-button">Exporteer alles apart</button>
     </div>
   </section>
@@ -248,13 +248,17 @@
       </div>
       <button id="closeGpxStartSheet" class="text-button">Sluiten</button>
     </div>
-    <p id="gpxStartProgress" class="gpx-start-progress" hidden>Route naar de GPX berekenen…</p>
+    <div id="gpxStartFeedback" class="gpx-start-feedback" role="status" aria-live="polite" hidden>
+      <span class="gpx-start-spinner" aria-hidden="true"></span>
+      <span id="gpxStartFeedbackText"></span>
+      <button id="gpxRetryGps" class="text-button" type="button" hidden>Opnieuw proberen</button>
+    </div>
     <div class="gpx-start-options">
       <button id="gpxNavigateToStart" class="gpx-start-option" type="button">
-        <span class="gpx-start-icon">A</span><span><strong>Eerst naar het startpunt</strong><small>Navigeer naar het officiële begin en volg daarna de volledige GPX.</small><em id="gpxStartDistanceText">Afstand wordt bepaald met GPS</em></span>
+        <span class="gpx-start-icon">A</span><span><strong>Eerst naar het startpunt</strong><small>Navigeer naar het officiële begin en volg daarna de volledige GPX.</small><em id="gpxStartDistanceText">GPS-locatie wordt opgehaald…</em></span>
       </button>
       <button id="gpxJoinNearest" class="gpx-start-option" type="button">
-        <span class="gpx-start-icon">⌖</span><span><strong>Zo dicht mogelijk instappen</strong><small>Rijd naar het dichtstbijzijnde bruikbare punt en vervolg de GPX vanaf daar.</small><em id="gpxNearestDistanceText">Afstand wordt bepaald met GPS</em></span>
+        <span class="gpx-start-icon">⌖</span><span><strong>Zo dicht mogelijk instappen</strong><small>Rijd naar het dichtstbijzijnde bruikbare punt en vervolg de GPX vanaf daar.</small><em id="gpxNearestDistanceText">GPS-locatie wordt opgehaald…</em></span>
       </button>
     </div>
   </section>
@@ -271,6 +275,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=26"></script>
+<script src="./app.js?v=27"></script>
 </body>
 </html>
