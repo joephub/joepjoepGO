@@ -425,3 +425,91 @@ body.gpx-editing .gpx-editor-sheet, body.gpx-editing .sheet-backdrop { opacity: 
   .nav-main-field > strong { font-size: 14px !important; }
   .nav-stat-field strong { font-size: 14px !important; }
 }
+
+/* v17: gescheiden desktop/mobiele layout en kaartgestuurde GPX-bewerker. */
+.gpx-editor-toolbar { display: grid; grid-template-columns: auto auto minmax(150px,1fr); gap: 8px; align-items: center; margin-top: 14px; }
+.gpx-selection-count { color: #475569; font-size: 13px; font-weight: 700; text-align: right; }
+.gpx-editor-help { margin: 10px 0 6px !important; font-size: 13px; color: #475569; }
+.gpx-point-row.is-selected { border-color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+.gpx-point-row { cursor: pointer; }
+.gpx-point-list { max-height: 30vh; }
+.gpx-selection-box { position: absolute; z-index: 50; border: 2px solid #2563eb; background: rgba(37,99,235,.16); pointer-events: none; }
+body.gpx-box-selecting #map canvas { cursor: crosshair !important; }
+
+/* Voorvertoning op desktop: compact en leesbaar, nooit midden over de kaart. */
+@media (pointer: fine) and (min-width: 900px) {
+  body:not(.navigation-active) .bottom-panel {
+    left: 18px;
+    right: auto;
+    bottom: 18px;
+    width: min(640px, calc(100vw - 36px));
+    max-width: 640px;
+    margin: 0;
+  }
+  body.route-ready:not(.navigation-active) .instruction-card {
+    grid-template-columns: minmax(0, 1.8fr) 105px 95px;
+    gap: 8px;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    color: #0f172a;
+  }
+  body.route-ready:not(.navigation-active) .nav-main-field,
+  body.route-ready:not(.navigation-active) .nav-stat-field {
+    min-width: 0;
+    border-radius: 14px;
+    background: rgba(15,23,42,.95);
+    color: #fff;
+    padding: 10px 12px;
+  }
+  body.route-ready:not(.navigation-active) .nav-main-field {
+    display: grid;
+    grid-template-columns: 42px minmax(0,1fr);
+    align-items: center;
+    gap: 9px;
+  }
+  body.route-ready:not(.navigation-active) .nav-main-field > strong {
+    font-size: 17px !important;
+    line-height: 1.2;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  body.route-ready:not(.navigation-active) .nav-stat-field {
+    display: grid;
+    align-content: center;
+    text-align: center;
+  }
+  body.route-ready:not(.navigation-active) .nav-stat-field strong { font-size: 18px !important; }
+  body.route-ready:not(.navigation-active) .controls { grid-template-columns: repeat(6, minmax(80px,1fr)); }
+
+  /* Desktop navigatie: kaart links en een vast, compact zijpaneel rechts. */
+  body.navigation-active .app { grid-template-columns: minmax(0,1fr) 330px !important; grid-template-rows: 1fr !important; transform: none !important; width: auto !important; height: auto !important; inset: 0 !important; left: 0 !important; top: 0 !important; }
+  body.navigation-active .map { grid-column: 1 !important; grid-row: 1 !important; }
+  body.navigation-active .bottom-panel {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    position: relative;
+    inset: auto;
+    width: 330px;
+    padding: 14px;
+    background: #f8fafc;
+    overflow-y: auto;
+    align-content: start;
+    box-shadow: -6px 0 22px rgba(15,23,42,.16);
+  }
+  body.navigation-active .instruction-card { grid-template-columns: 1fr 1fr !important; grid-template-areas: "main main" "distance time"; }
+  body.navigation-active .nav-main-field { grid-area: main; }
+  body.navigation-active .nav-stat-field:nth-of-type(2) { grid-area: distance; }
+  body.navigation-active .nav-stat-field:nth-of-type(3) { grid-area: time; }
+  body.navigation-active .nav-main-field > strong { font-size: 17px !important; }
+  body.navigation-active .layout-toggle { display: none !important; }
+  body.navigation-active .route-actions { grid-template-columns: 48px 48px; }
+
+  .gpx-editor-sheet { width: min(520px, 36vw); max-height: calc(100vh - 24px); left: auto; right: 12px; bottom: 12px; border-radius: 22px; }
+  body.gpx-editing .sheet-backdrop { background: rgba(15,23,42,.15); }
+}
+
+@media (max-width: 899px) {
+  .gpx-editor-toolbar { grid-template-columns: 1fr 1fr; }
+  .gpx-selection-count { grid-column: 1 / -1; text-align: left; }
+}

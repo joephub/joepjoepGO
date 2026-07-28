@@ -1,7 +1,11 @@
-# joepjoepGO v16
+# joepjoepGO v17
 
-Wijzigingen:
-- De oriëntatieknop draait nu de volledige applicatie 90 graden wanneer de browser het scherm niet fysiek wil draaien.
-- Eerst wordt de native Screen Orientation API geprobeerd; anders gebruikt de app een CSS-rotatie.
-- Tijdens navigatie neemt de oriëntatieknop linksboven exact de plaats van het verborgen tandwiel over.
-- Versielabel: joepjoepGO v16.
+Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-bewerker.
+
+## GPX bewerken
+- Klik een routepunt om het te selecteren.
+- Een enkel geselecteerd tussenpunt kan worden versleept.
+- Klik op **Selectievak** en sleep over de kaart om meerdere punten te selecteren.
+- Verwijder de selectie met **Verwijder selectie**.
+- Start- en eindpunt blijven behouden.
+- Exporteer de aangepaste lijn als een nieuw GPX-bestand.

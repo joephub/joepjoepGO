@@ -39,7 +39,7 @@
     layoutMode: saved.layoutMode || (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'),
     rotationFallback: false,
     fuelCandidates: [],
-    gpxEditor: { active: false, fileName: 'route', originalCoordinates: [], controlPoints: [], originalControlPoints: [], markers: [] }
+    gpxEditor: { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null }
   };
 
   if (!window.maplibregl || !window.turf) {
@@ -108,6 +108,7 @@
     addRouteLayer('route-remaining', '#2563eb', 8, 0.98);
     addRouteLayer('rejoin-casing', '#ffffff', 12, 0.94);
     addRouteLayer('rejoin-route', '#f97316', 7, 0.98);
+    addGpxEditorLayers();
     state.mapReady = true;
     status('Klaar om te testen');
   });
@@ -120,6 +121,22 @@
       source: id,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': color, 'line-width': width, 'line-opacity': opacity }
+    });
+  }
+
+  function addGpxEditorLayers() {
+    map.addSource('gpx-edit-points', { type: 'geojson', data: emptyGeoJson() });
+    map.addLayer({
+      id: 'gpx-edit-points',
+      type: 'circle',
+      source: 'gpx-edit-points',
+      paint: {
+        'circle-radius': ['case', ['boolean', ['get', 'selected'], false], 7, 4],
+        'circle-color': ['case', ['boolean', ['get', 'selected'], false], '#dc2626', '#2563eb'],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2,
+        'circle-opacity': 0.95
+      }
     });
   }
 
@@ -515,157 +532,240 @@
   function parseGpx(xml) {
     const trackNodes = Array.from(xml.querySelectorAll('trkpt'));
     const routeNodes = Array.from(xml.querySelectorAll('rtept'));
-    const waypointNodes = Array.from(xml.querySelectorAll('wpt'));
     const nodes = trackNodes.length ? trackNodes : routeNodes;
     const coordinates = nodes.map(n => [Number(n.getAttribute('lon')), Number(n.getAttribute('lat'))]).filter(([lng,lat]) => Number.isFinite(lng) && Number.isFinite(lat));
-    const explicitStops = (routeNodes.length ? routeNodes : waypointNodes).map(n => ({
-      point: [Number(n.getAttribute('lon')), Number(n.getAttribute('lat'))],
-      name: n.querySelector('name')?.textContent?.trim() || ''
-    })).filter(item => item.point.every(Number.isFinite));
-    return { coordinates, explicitStops };
+    return { coordinates };
   }
 
-  function makeEditorControlPoints(coordinates, explicitStops) {
-    if (explicitStops.length >= 2) return explicitStops.map((item, index) => ({ point: [...item.point], name: item.name || `Tussenpunt ${index + 1}` }));
-    const line = turf.lineString(coordinates);
-    const total = turf.length(line, { units: 'kilometers' });
-    const desired = Math.max(2, Math.min(12, Math.ceil(total / 12) + 1));
-    const result = [];
-    for (let i = 0; i < desired; i += 1) {
-      const km = desired === 1 ? 0 : total * i / (desired - 1);
-      result.push({ point: turf.along(line, km, { units: 'kilometers' }).geometry.coordinates, name: i === 0 ? 'Start' : i === desired - 1 ? 'Einde' : `Tussenpunt ${i}` });
+  function gpxPointFeatures() {
+    const selected = state.gpxEditor.selectedIndices;
+    return state.gpxEditor.editCoordinates.map((point, index) => turf.point(point, { index, selected: selected.has(index) }));
+  }
+
+  function updateGpxPointLayer() {
+    const source = map.getSource('gpx-edit-points');
+    if (source) source.setData(turf.featureCollection(gpxPointFeatures()));
+    const count = state.gpxEditor.selectedIndices.size;
+    if ($('gpxSelectionCount')) $('gpxSelectionCount').textContent = count ? `${count} punt${count === 1 ? '' : 'en'} geselecteerd` : 'Geen punten geselecteerd';
+    if ($('deleteSelectedGpx')) $('deleteSelectedGpx').disabled = count === 0;
+  }
+
+  function removeSelectedMarker() {
+    if (state.gpxEditor.selectedMarker) state.gpxEditor.selectedMarker.remove();
+    state.gpxEditor.selectedMarker = null;
+  }
+
+  function selectGpxIndices(indices, additive = false) {
+    if (!additive) state.gpxEditor.selectedIndices.clear();
+    indices.forEach(index => {
+      if (index >= 0 && index < state.gpxEditor.editCoordinates.length) state.gpxEditor.selectedIndices.add(index);
+    });
+    removeSelectedMarker();
+    if (state.gpxEditor.selectedIndices.size === 1) {
+      const index = [...state.gpxEditor.selectedIndices][0];
+      const marker = new maplibregl.Marker({ draggable: index !== 0 && index !== state.gpxEditor.editCoordinates.length - 1, color: '#dc2626' })
+        .setLngLat(state.gpxEditor.editCoordinates[index])
+        .addTo(map);
+      marker.on('dragend', () => {
+        const p = marker.getLngLat();
+        state.gpxEditor.editCoordinates[index] = [p.lng, p.lat];
+        drawEditedGpx();
+        renderGpxEditorList();
+      });
+      state.gpxEditor.selectedMarker = marker;
     }
-    return result;
+    updateGpxPointLayer();
+    renderGpxEditorList();
   }
 
-  function clearGpxEditMarkers() {
-    state.gpxEditor.markers.forEach(marker => marker.remove());
-    state.gpxEditor.markers = [];
-  }
-
-  function renderGpxEditor() {
-    clearGpxEditMarkers();
+  function renderGpxEditorList() {
     const list = $('gpxPointList');
     if (!list) return;
     list.innerHTML = '';
-    state.gpxEditor.controlPoints.forEach((item, index) => {
-      const el = document.createElement('div');
-      el.className = 'gpx-edit-marker';
-      el.textContent = String(index + 1);
-      const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat(item.point).addTo(map);
-      marker.on('dragend', async () => {
-        const p = marker.getLngLat();
-        item.point = [p.lng, p.lat];
-        await rebuildGpxFromControlPoints();
-        renderGpxEditor();
-      });
-      state.gpxEditor.markers.push(marker);
-
+    const points = state.gpxEditor.editCoordinates;
+    const selected = state.gpxEditor.selectedIndices;
+    const visibleIndices = new Set([0, points.length - 1, ...selected]);
+    if (points.length <= 40) points.forEach((_, index) => visibleIndices.add(index));
+    else {
+      const step = Math.max(1, Math.ceil(points.length / 18));
+      for (let i = 0; i < points.length; i += step) visibleIndices.add(i);
+    }
+    [...visibleIndices].sort((a,b) => a-b).forEach(index => {
+      const point = points[index];
+      if (!point) return;
       const row = document.createElement('div');
-      row.className = 'gpx-point-row';
-      row.innerHTML = `<span class="gpx-point-number">${index + 1}</span><span class="gpx-point-coordinates"><strong>${item.name}</strong><br>${item.point[1].toFixed(5)}, ${item.point[0].toFixed(5)}</span>`;
+      row.className = `gpx-point-row${selected.has(index) ? ' is-selected' : ''}`;
+      row.innerHTML = `<span class="gpx-point-number">${index + 1}</span><span class="gpx-point-coordinates"><strong>${index === 0 ? 'Startpunt' : index === points.length - 1 ? 'Eindpunt' : `Routepunt ${index + 1}`}</strong><br>${point[1].toFixed(5)}, ${point[0].toFixed(5)}</span>`;
       const remove = document.createElement('button');
       remove.className = 'gpx-point-remove';
       remove.textContent = 'Verwijder';
-      remove.disabled = state.gpxEditor.controlPoints.length <= 2;
-      remove.addEventListener('click', async () => {
-        if (state.gpxEditor.controlPoints.length <= 2) return status('Een route moet minimaal een start- en eindpunt houden.');
-        state.gpxEditor.controlPoints.splice(index, 1);
-        await rebuildGpxFromControlPoints();
-        renderGpxEditor();
+      remove.disabled = index === 0 || index === points.length - 1;
+      remove.addEventListener('click', event => {
+        event.stopPropagation();
+        deleteGpxIndices([index]);
+      });
+      row.addEventListener('click', () => {
+        selectGpxIndices([index]);
+        map.easeTo({ center: point, zoom: Math.max(map.getZoom(), 15), duration: 350 });
       });
       row.appendChild(remove);
       list.appendChild(row);
     });
   }
 
-  async function rebuildGpxFromControlPoints() {
-    const points = state.gpxEditor.controlPoints.map(item => item.point);
-    try {
-      status('GPX-route opnieuw berekenen…');
-      let data;
-      if (state.apiKey && points.length >= 2) data = await calculateRoute(points);
-      else {
-        const coordinates = points.map(point => [...point]);
-        data = { coordinates, distance: turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000, time: 0, instructions: [] };
-      }
-      drawRoute(data, 'gpx');
-      $('editGpx').hidden = false;
-      status('GPX bijgewerkt');
-    } catch (error) { status(`Aanpassen mislukt: ${error.message}`); }
+  function drawEditedGpx() {
+    const coordinates = state.gpxEditor.editCoordinates;
+    if (coordinates.length < 2) return;
+    const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
+    drawRoute({ coordinates: coordinates.map(point => [...point]), distance, time: 0, instructions: [] }, 'gpx');
+    updateGpxPointLayer();
+  }
+
+  function deleteGpxIndices(indices) {
+    const last = state.gpxEditor.editCoordinates.length - 1;
+    const removable = [...new Set(indices)].filter(index => index > 0 && index < last).sort((a,b) => b-a);
+    if (!removable.length) return status('Het start- en eindpunt blijven altijd behouden.');
+    removable.forEach(index => state.gpxEditor.editCoordinates.splice(index, 1));
+    state.gpxEditor.selectedIndices.clear();
+    removeSelectedMarker();
+    drawEditedGpx();
+    renderGpxEditorList();
+    status(`${removable.length} routepunt${removable.length === 1 ? '' : 'en'} verwijderd.`);
+  }
+
+  function deleteSelectedGpx() {
+    deleteGpxIndices([...state.gpxEditor.selectedIndices]);
+  }
+
+  function setBoxSelectMode(active) {
+    state.gpxEditor.boxMode = active;
+    document.body.classList.toggle('gpx-box-selecting', active);
+    if ($('boxSelectGpx')) {
+      $('boxSelectGpx').classList.toggle('active', active);
+      $('boxSelectGpx').textContent = active ? '✕ Stop selecteren' : '▭ Selectievak';
+    }
+    map.dragPan.enable();
+    status(active ? 'Sleep een selectievak over de GPX-punten.' : 'Selectievak uitgeschakeld.');
+  }
+
+  function boxPoint(event) {
+    const rect = map.getContainer().getBoundingClientRect();
+    const original = event.originalEvent || event;
+    const touch = original.touches?.[0] || original.changedTouches?.[0];
+    const clientX = touch ? touch.clientX : original.clientX;
+    const clientY = touch ? touch.clientY : original.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function beginGpxBoxSelection(event) {
+    if (!state.gpxEditor.active || !state.gpxEditor.boxMode) return;
+    event.preventDefault();
+    map.dragPan.disable();
+    state.gpxEditor.boxStart = boxPoint(event);
+    const box = document.createElement('div');
+    box.className = 'gpx-selection-box';
+    map.getContainer().appendChild(box);
+    state.gpxEditor.boxElement = box;
+  }
+
+  function moveGpxBoxSelection(event) {
+    if (!state.gpxEditor.boxStart || !state.gpxEditor.boxElement) return;
+    const current = boxPoint(event);
+    const x = Math.min(state.gpxEditor.boxStart.x, current.x);
+    const y = Math.min(state.gpxEditor.boxStart.y, current.y);
+    const width = Math.abs(current.x - state.gpxEditor.boxStart.x);
+    const height = Math.abs(current.y - state.gpxEditor.boxStart.y);
+    Object.assign(state.gpxEditor.boxElement.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
+  }
+
+  function endGpxBoxSelection(event) {
+    if (!state.gpxEditor.boxStart) return;
+    const end = boxPoint(event);
+    const start = state.gpxEditor.boxStart;
+    const bbox = [[Math.min(start.x, end.x), Math.min(start.y, end.y)], [Math.max(start.x, end.x), Math.max(start.y, end.y)]];
+    const features = map.queryRenderedFeatures(bbox, { layers: ['gpx-edit-points'] });
+    selectGpxIndices(features.map(feature => Number(feature.properties.index)).filter(Number.isFinite));
+    state.gpxEditor.boxElement?.remove();
+    state.gpxEditor.boxElement = null;
+    state.gpxEditor.boxStart = null;
+    map.dragPan.enable();
+    setBoxSelectMode(false);
   }
 
   function openGpxEditor() {
-    if (state.mode !== 'gpx' || !state.gpxEditor.controlPoints.length) return status('Laad eerst een GPX-bestand.');
+    if (state.mode !== 'gpx' || state.gpxEditor.editCoordinates.length < 2) return status('Laad eerst een GPX-bestand.');
     pauseSimulation();
     setNavigationMode(false);
     state.gpxEditor.active = true;
+    state.gpxEditor.selectedIndices.clear();
     document.body.classList.add('gpx-editing');
     $('gpxEditorSheet').hidden = false;
     $('backdrop').hidden = false;
-    renderGpxEditor();
+    updateGpxPointLayer();
+    renderGpxEditorList();
     showOverview();
-    status('Versleep een genummerd punt of verwijder een tussenpunt.');
+    status('Klik een punt om het te selecteren en te verslepen, of gebruik een selectievak.');
   }
 
   function closeGpxEditor() {
     state.gpxEditor.active = false;
+    setBoxSelectMode(false);
     document.body.classList.remove('gpx-editing');
-    clearGpxEditMarkers();
+    removeSelectedMarker();
+    state.gpxEditor.selectedIndices.clear();
+    updateGpxPointLayer();
     if ($('gpxEditorSheet')) $('gpxEditorSheet').hidden = true;
     if ($('settingsSheet')?.hidden && $('fuelSheet')?.hidden) $('backdrop').hidden = true;
-    showOverview();
   }
 
-  async function restoreGpx() {
-    state.gpxEditor.controlPoints = state.gpxEditor.originalControlPoints.map(item => ({ point: [...item.point], name: item.name }));
-    const coordinates = state.gpxEditor.originalCoordinates.map(point => [...point]);
-    const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
-    drawRoute({ coordinates, distance, time: 0, instructions: [] }, 'gpx');
-    renderGpxEditor();
-    status('Oorspronkelijke GPX hersteld');
+  function restoreGpx() {
+    state.gpxEditor.editCoordinates = state.gpxEditor.originalCoordinates.map(point => [...point]);
+    state.gpxEditor.selectedIndices.clear();
+    removeSelectedMarker();
+    drawEditedGpx();
+    renderGpxEditorList();
+    showOverview();
+    status('De oorspronkelijke GPX is hersteld.');
   }
 
   function escapeXml(value) {
-    return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+    return String(value || '').replace(/[<>&"']/g, char => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;', "'":'&apos;' }[char]));
   }
 
   function exportGpx() {
-    if (!state.route?.coordinates?.length) return status('Er is geen GPX-route om te exporteren.');
-    const routePoints = state.gpxEditor.controlPoints.map(item => `    <rtept lat="${item.point[1].toFixed(7)}" lon="${item.point[0].toFixed(7)}"><name>${escapeXml(item.name)}</name></rtept>`).join('\n');
-    const trackPoints = state.route.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v15" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <rte>\n    <name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name>\n${routePoints}\n  </rte>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n    </trkseg></trk>\n</gpx>`;
+    const coordinates = state.gpxEditor.editCoordinates;
+    if (coordinates.length < 2) return status('Er zijn onvoldoende punten om te exporteren.');
+    const trackPoints = coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v17" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
     const blob = new Blob([xml], { type: 'application/gpx+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
+    link.href = URL.createObjectURL(blob);
     link.download = `${state.gpxEditor.fileName.replace(/\.gpx$/i,'') || 'route'}-bewerkt.gpx`;
-    document.body.appendChild(link);
     link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status('Nieuwe GPX geëxporteerd');
+    URL.revokeObjectURL(link.href);
+    status('Bewerkte GPX geëxporteerd.');
   }
 
   async function loadGpx(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
     try {
-      const file = event.target.files && event.target.files[0];
-      if (!file) return;
       const xml = new DOMParser().parseFromString(await file.text(), 'application/xml');
-      if (xml.querySelector('parsererror')) throw new Error('Dit GPX-bestand kan niet worden gelezen.');
-      const parsed = parseGpx(xml);
-      const coordinates = parsed.coordinates;
-      if (coordinates.length < 2) throw new Error('Geen bruikbare GPX-track gevonden.');
-      const controls = makeEditorControlPoints(coordinates, parsed.explicitStops);
-      state.gpxEditor.fileName = file.name.replace(/\.gpx$/i, '') || 'route';
-      state.gpxEditor.originalCoordinates = coordinates.map(point => [...point]);
-      state.gpxEditor.controlPoints = controls.map(item => ({ point: [...item.point], name: item.name }));
-      state.gpxEditor.originalControlPoints = controls.map(item => ({ point: [...item.point], name: item.name }));
+      if (xml.querySelector('parsererror')) throw new Error('Dit GPX-bestand kon niet worden gelezen.');
+      const { coordinates } = parseGpx(xml);
+      if (coordinates.length < 2) throw new Error('Geen bruikbare routepunten gevonden.');
       const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
-      state.startMode = 'manual';
-      $('startMode').textContent = 'Hand';
-      $('startMode').classList.add('manual');
-      $('startQuery').disabled = false;
+      state.gpxEditor = {
+        active: false,
+        fileName: file.name.replace(/\.gpx$/i, '') || 'route',
+        originalCoordinates: coordinates.map(point => [...point]),
+        editCoordinates: coordinates.map(point => [...point]),
+        selectedIndices: new Set(),
+        selectedMarker: null,
+        boxMode: false,
+        boxStart: null,
+        boxElement: null
+      };
       state.startPoint = coordinates[0];
       state.destinationPoint = coordinates[coordinates.length - 1];
       $('startQuery').value = 'Start GPX';
@@ -674,7 +774,7 @@
       setMarker('destination', coordinates[coordinates.length - 1]);
       drawRoute({ coordinates, distance, time: 0, instructions: [] }, 'gpx');
       $('editGpx').hidden = false;
-      status(`GPX geladen: ${fmtDistance(distance)}. Kies Bewerk GPX om tussenpunten aan te passen.`);
+      status(`GPX geladen met ${coordinates.length} punten. Kies Bewerk GPX om punten aan te passen.`);
     } catch (error) { status(error.message); }
     finally { event.target.value = ''; }
   }
@@ -939,8 +1039,8 @@
     document.body.classList.remove('route-ready');
     setNavigationMode(false);
     state.original = [];
-    clearGpxEditMarkers();
-    state.gpxEditor = { active: false, fileName: 'route', originalCoordinates: [], controlPoints: [], originalControlPoints: [], markers: [] };
+    removeSelectedMarker();
+    state.gpxEditor = { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null };
     if ($('editGpx')) $('editGpx').hidden = true;
     state.destinationPoint = null;
     state.mode = 'idle';
@@ -979,7 +1079,7 @@
 
   function bind(id, eventName, handler) {
     const element = $(id);
-    if (!element) { console.warn(`joepjoepGO v15: element #${id} ontbreekt`); return; }
+    if (!element) { console.warn(`joepjoepGO v17: element #${id} ontbreekt`); return; }
     element.addEventListener(eventName, handler);
   }
 
@@ -994,6 +1094,8 @@
   bind('closeGpxEditor', 'click', closeGpxEditor);
   bind('restoreGpx', 'click', restoreGpx);
   bind('exportGpx', 'click', exportGpx);
+  bind('boxSelectGpx', 'click', () => setBoxSelectMode(!state.gpxEditor.boxMode));
+  bind('deleteSelectedGpx', 'click', deleteSelectedGpx);
   bind('overview', 'click', showOverview);
   bind('clear', 'click', clearRoute);
   bind('fuel', 'click', addNearestFuelStop);
@@ -1013,6 +1115,20 @@
   bind('startQuery', 'input', () => { state.startPoint = null; });
   bind('destinationQuery', 'keydown', async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message); } } });
   bind('startQuery', 'keydown', async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message); } } });
+
+  map.on('click', 'gpx-edit-points', event => {
+    if (!state.gpxEditor.active || state.gpxEditor.boxMode) return;
+    const index = Number(event.features?.[0]?.properties?.index);
+    if (Number.isFinite(index)) selectGpxIndices([index], event.originalEvent?.ctrlKey || event.originalEvent?.metaKey);
+  });
+  map.on('mouseenter', 'gpx-edit-points', () => { if (state.gpxEditor.active && !state.gpxEditor.boxMode) map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'gpx-edit-points', () => { map.getCanvas().style.cursor = ''; });
+  map.getContainer().addEventListener('mousedown', beginGpxBoxSelection);
+  map.getContainer().addEventListener('mousemove', moveGpxBoxSelection);
+  window.addEventListener('mouseup', endGpxBoxSelection);
+  map.getContainer().addEventListener('touchstart', beginGpxBoxSelection, { passive: false });
+  map.getContainer().addEventListener('touchmove', moveGpxBoxSelection, { passive: false });
+  window.addEventListener('touchend', endGpxBoxSelection, { passive: false });
 
   window.addEventListener('resize', () => { if (state.navigationActive) applyLayoutMode(); });
   applyLayoutMode();

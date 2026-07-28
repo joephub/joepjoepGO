@@ -13,7 +13,7 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v16</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v17</div>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
   <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
 
@@ -118,9 +118,15 @@
       </div>
       <button id="closeGpxEditor" class="text-button">Sluiten</button>
     </div>
+    <div class="gpx-editor-toolbar">
+      <button id="boxSelectGpx" class="control-button">▭ Selectievak</button>
+      <button id="deleteSelectedGpx" class="control-button danger" disabled>Verwijder selectie</button>
+      <span id="gpxSelectionCount" class="gpx-selection-count">Geen punten geselecteerd</span>
+    </div>
+    <p class="gpx-editor-help">Klik een punt om het te selecteren en te verslepen. Gebruik <strong>Selectievak</strong> en sleep over de kaart om meerdere punten tegelijk te selecteren.</p>
     <div id="gpxPointList" class="gpx-point-list"></div>
     <div class="gpx-editor-actions">
-      <button id="restoreGpx" class="control-button">↺ Herstellen</button>
+      <button id="restoreGpx" class="control-button">↺ Alles herstellen</button>
       <button id="exportGpx" class="control-button primary">Exporteer nieuwe GPX</button>
     </div>
   </section>
@@ -137,6 +143,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=16"></script>
+<script src="./app.js?v=17"></script>
 </body>
 </html>
