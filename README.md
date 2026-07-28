@@ -1,4 +1,4 @@
-# RouteRijder v5
+# RouteRijder v6
 
 Statische navigatie-PWA voor GitHub Pages. Geen npm-build nodig.
 

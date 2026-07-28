@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const KEY = 'routerijder-v5-settings';
+  const KEY = 'routerijder-v6-settings';
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 
   const state = {
@@ -56,15 +56,55 @@
   map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
   map.on('load', () => {
-    addRouteLayer('main-route', '#2563eb', 8);
-    addRouteLayer('rejoin-route', '#f97316', 7);
+    addRouteLayer('route-casing', '#ffffff', 13, 0.96);
+    addRouteLayer('route-traveled', '#94a3b8', 8, 0.78);
+    addRouteLayer('route-remaining', '#2563eb', 8, 0.98);
+    addRouteLayer('rejoin-casing', '#ffffff', 12, 0.94);
+    addRouteLayer('rejoin-route', '#f97316', 7, 0.98);
     state.mapReady = true;
     status('Klaar om te testen');
   });
 
-  function addRouteLayer(id, color, width) {
+  function addRouteLayer(id, color, width, opacity) {
     map.addSource(id, { type: 'geojson', data: turf.lineString([]) });
-    map.addLayer({ id, type: 'line', source: id, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': color, 'line-width': width, 'line-opacity': .92 } });
+    map.addLayer({
+      id,
+      type: 'line',
+      source: id,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': color, 'line-width': width, 'line-opacity': opacity }
+    });
+  }
+
+  function emptyLine() {
+    return turf.lineString([]);
+  }
+
+  function setLineSource(id, coordinates) {
+    const source = map.getSource(id);
+    if (source) source.setData(coordinates && coordinates.length >= 2 ? turf.lineString(coordinates) : emptyLine());
+  }
+
+  function updateRouteProgress(progressKm) {
+    if (!state.route || state.route.coordinates.length < 2) return;
+    const line = turf.lineString(state.route.coordinates);
+    const totalKm = turf.length(line, { units: 'kilometers' });
+    const clamped = Math.max(0, Math.min(totalKm, Number(progressKm) || 0));
+
+    let traveled = [];
+    let remaining = state.route.coordinates;
+    try {
+      if (clamped > 0.001) traveled = turf.lineSliceAlong(line, 0, clamped, { units: 'kilometers' }).geometry.coordinates;
+      if (clamped < totalKm - 0.001) remaining = turf.lineSliceAlong(line, clamped, totalKm, { units: 'kilometers' }).geometry.coordinates;
+      else remaining = [];
+    } catch (_) {
+      traveled = [];
+      remaining = state.route.coordinates;
+    }
+
+    setLineSource('route-casing', state.route.coordinates);
+    setLineSource('route-traveled', traveled);
+    setLineSource('route-remaining', remaining);
   }
 
   function ensureKey() {
@@ -127,10 +167,9 @@
     state.mode = mode;
     state.progressKm = 0;
     state.follow = false;
-    const main = map.getSource('main-route');
-    const rejoin = map.getSource('rejoin-route');
-    if (main) main.setData(turf.lineString(mode === 'rejoin' ? state.original : data.coordinates));
-    if (rejoin) rejoin.setData(turf.lineString(mode === 'rejoin' ? data.coordinates : []));
+    updateRouteProgress(0);
+    setLineSource('rejoin-casing', mode === 'rejoin' ? data.coordinates : []);
+    setLineSource('rejoin-route', mode === 'rejoin' ? data.coordinates : []);
     showOverview();
     const first = data.instructions[0];
     $('instruction').textContent = first ? first.text : mode === 'gpx' ? 'Volg de geladen GPX-route' : 'Volg de route';
@@ -293,6 +332,7 @@
     const location = Number(snap.properties.location || 0);
     const offKm = turf.distance(turf.point(point), snap, { units: 'kilometers' });
     state.progressKm = Math.max(state.progressKm, location);
+    updateRouteProgress(state.progressKm);
     $('devOffRoute').textContent = `${Math.round(offKm * 1000)} m`;
 
     const totalKm = turf.length(line, { units: 'kilometers' });
@@ -356,8 +396,8 @@
     }
     routes.sort((a,b) => a.score - b.score);
     if (!routes[0]) return status('Geen geschikte aansluiting gevonden.');
-    const source = map.getSource('rejoin-route');
-    if (source) source.setData(turf.lineString(routes[0].route.coordinates));
+    setLineSource('rejoin-casing', routes[0].route.coordinates);
+    setLineSource('rejoin-route', routes[0].route.coordinates);
     status(`Aansluitroute: ${fmtDistance(routes[0].route.distance)}`);
   }
 
@@ -415,6 +455,7 @@
     pauseSimulation();
     state.simulation.distanceKm = 0;
     state.progressKm = 0;
+    updateRouteProgress(0);
     if (state.route && state.route.coordinates.length) {
       setCurrentPosition(state.route.coordinates[0], { source: 'Simulatie', speedMps: 0 });
       showOverview();
@@ -455,7 +496,7 @@
     state.mode = 'idle';
     state.progressKm = 0;
     state.simulation.distanceKm = 0;
-    ['main-route','rejoin-route'].forEach(id => map.getSource(id)?.setData(turf.lineString([])));
+    ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
     if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
     $('destinationQuery').value = '';
     $('instruction').textContent = 'Geen actieve route';
