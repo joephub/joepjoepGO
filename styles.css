@@ -291,9 +291,10 @@ body.navigation-active.layout-landscape .nav-stat-grid { grid-template-columns: 
 body.navigation-active.layout-landscape .nav-stat-field { padding: 7px 5px; }
 body.navigation-active.layout-landscape .nav-stat-field strong { font-size: 14px; }
 
-/* Alleen als een mobiele browser een fysieke rotatie weigert. */
-body.force-rotate-cw .app { position: fixed; inset: auto; top: 0; left: 100dvw; width: 100dvh; height: 100dvw; transform: rotate(90deg); transform-origin: top left; }
-body.force-rotate-ccw .app { position: fixed; inset: auto; top: 100dvh; left: 0; width: 100dvh; height: 100dvw; transform: rotate(-90deg); transform-origin: top left; }
+/* Vaste, handmatige mobiele rotatie. De app volgt de bewegingssensor niet. */
+body.force-rotate-90 .app { position: fixed; inset: auto; top: 0; left: 100dvw; width: 100dvh; height: 100dvw; transform: rotate(90deg); transform-origin: top left; }
+body.force-rotate-180 .app { position: fixed; inset: auto; top: 100dvh; left: 100dvw; width: 100dvw; height: 100dvh; transform: rotate(180deg); transform-origin: top left; }
+body.force-rotate-270 .app { position: fixed; inset: auto; top: 100dvh; left: 0; width: 100dvh; height: 100dvw; transform: rotate(-90deg); transform-origin: top left; }
 
 @media (max-width: 899px) {
   .planner-card { left: 56px; right: 8px; width: calc(100% - 64px); padding: 7px; }
@@ -346,7 +347,7 @@ body.force-rotate-ccw .app { position: fixed; inset: auto; top: 100dvh; left: 0;
   body.navigation-active .map { position: relative !important; inset: auto !important; grid-column: 1 !important; grid-row: 1 !important; width: 100% !important; height: 100% !important; }
   body.navigation-active .navigation-panel { position: relative; inset: auto; grid-column: 2; grid-row: 1; padding: 14px; overflow-y: auto; align-content: start; box-shadow: -7px 0 24px rgba(15,23,42,.18); }
   body.navigation-active .layout-toggle { display: none !important; }
-  body.force-rotate-cw .app, body.force-rotate-ccw .app { transform: none !important; position: fixed !important; inset: 0 !important; width: auto !important; height: auto !important; }
+  body.force-rotate-90 .app, body.force-rotate-180 .app, body.force-rotate-270 .app { transform: none !important; position: fixed !important; inset: 0 !important; width: auto !important; height: auto !important; }
 
   .sheet { left: auto; right: 12px; bottom: 12px; width: min(520px,38vw); max-height: calc(100dvh - 24px); border-radius: 22px; }
   .sheet-title-row { top: -18px; }
@@ -646,6 +647,14 @@ body.navigation-paused .turn-alert { display: none !important; }
 
 
 /* v25: uitgebreide GPX-voorbereiding en editor */
+.gpx-start-feedback { margin-top: 10px; padding: 10px 12px; border-radius: 13px; background: #eff6ff; color: #1e3a8a; display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 9px; align-items: center; font-size: 13px; line-height: 1.35; }
+.gpx-start-feedback[hidden] { display: none !important; }
+.gpx-start-feedback.is-error { background: #fef2f2; color: #991b1b; }
+.gpx-start-spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; opacity: 0; }
+.gpx-start-feedback.is-loading .gpx-start-spinner { opacity: 1; animation: gpx-start-spin .8s linear infinite; }
+.gpx-start-feedback.is-error .gpx-start-spinner { opacity: 1; border: 0; width: 18px; height: 18px; display: grid; place-items: center; }
+.gpx-start-feedback.is-error .gpx-start-spinner::before { content: '!'; font-weight: 900; }
+@keyframes gpx-start-spin { to { transform: rotate(360deg); } }
 .gpx-start-options { display: grid; gap: 10px; margin-top: 12px; }
 .gpx-start-option { width: 100%; border: 1px solid var(--line); border-radius: 17px; background: #fff; padding: 13px; display: grid; grid-template-columns: 46px minmax(0,1fr); gap: 11px; align-items: center; text-align: left; box-shadow: 0 5px 16px rgba(15,23,42,.08); }
 .gpx-start-option:hover { border-color: var(--blue); background: #eff6ff; }
@@ -715,59 +724,20 @@ body.gpx-point-adding .gpx-editor-help::after {
   .gpx-analysis-actions #exportAllGpxSegments { grid-column: auto; }
 }
 
-
-/* v26: meerdere GPX-bestanden en trajecten als één betrouwbare rijroute. */
-.gpx-start-progress {
-  margin: 9px 0 0 !important;
-  padding: 9px 11px;
-  border-radius: 12px;
-  background: #eff6ff;
-  color: #1d4ed8 !important;
-  font-size: 12px;
-  font-weight: 850;
-  text-align: center;
+/* v27: meerdere GPX-bestanden als één rijroute en rustige GPS-start */
+.gpx-start-option:disabled {
+  cursor: wait;
+  opacity: .56;
+  filter: grayscale(.12);
 }
-.gpx-start-option.is-loading { opacity: .68; cursor: wait; }
-.gpx-analysis-actions #useSelectedGpxSegment { grid-column: 1 / -1; }
-body.gpx-preparing .route-preview { cursor: wait; }
-.start-navigation-button.is-loading { position: relative; color: transparent; }
-.start-navigation-button.is-loading::after {
-  content: "";
-  position: absolute;
-  inset: 14px;
-  border: 3px solid rgba(5,46,22,.25);
-  border-top-color: #052e16;
-  border-radius: 999px;
-  animation: routeActionSpin .75s linear infinite;
+.gpx-start-option[aria-busy="true"] .gpx-start-icon {
+  animation: gpx-start-pulse 1s ease-in-out infinite;
+}
+@keyframes gpx-start-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(.92); opacity: .66; }
 }
 
-/* Het GPX-startvenster blijft ook in liggende mobiele stand volledig zichtbaar. */
-@media (max-width: 899px) and (orientation: landscape) {
-  .gpx-start-sheet {
-    left: 50%;
-    right: auto;
-    top: 50%;
-    bottom: auto;
-    width: min(620px, calc(100% - 28px));
-    max-height: calc(100% - 24px);
-    transform: translate(-50%, -50%);
-    border-radius: 22px;
-    padding-bottom: 16px;
-  }
-  .gpx-start-sheet .sheet-title-row { position: static; margin: -18px -16px 7px; }
-  .gpx-start-options { grid-template-columns: 1fr 1fr; gap: 9px; }
-  .gpx-start-option { min-height: 106px; align-content: center; }
-  .gpx-start-option small { font-size: 11px; }
-}
-
-@media (max-width: 520px) {
-  .gpx-analysis-actions #useSelectedGpxSegment { min-height: 52px; }
-}
-.gpx-start-sheet {
-  z-index: 120;
-  background: #fff !important;
-  color: var(--ink);
-  isolation: isolate;
-}
-.gpx-start-sheet .gpx-start-options,
-.gpx-start-sheet .sheet-title-row { position: relative; z-index: 1; }
+/* v27: vier vaste oriëntatiestanden (0°, 90°, 180° en 270°). */
+body.force-rotate-90, body.force-rotate-180, body.force-rotate-270 { overscroll-behavior: none; }
+body.navigation-active .layout-toggle { font-size: 22px; touch-action: manipulation; }
