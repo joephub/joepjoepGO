@@ -38,3 +38,7 @@
 - OpenStreetMap publieke tiles zijn bedoeld voor beperkt prototypegebruik.
 - Achtergrond-GPS is in mobiele browsers niet volledig betrouwbaar.
 - Test de toepassing niet actief tijdens het besturen; gebruik een telefoonhouder en stel routes vooraf in.
+
+
+## Versie 3
+MapLibre is vastgezet op versie 5.6.2 via jsDelivr. De service worker is tijdelijk uitgeschakeld om oude caches tijdens ontwikkeling te voorkomen.
