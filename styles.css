@@ -704,3 +704,70 @@ body.gpx-point-adding .gpx-editor-help::after {
   .gpx-editor-actions { grid-template-columns: 1fr; }
   .gpx-start-option em { font-size: 10px; }
 }
+
+
+/* v26: GPX-bewerking altijd vindbaar */
+.gpx-analysis-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gpx-analysis-actions #exportAllGpxSegments { grid-column: 1 / -1; }
+.gpx-analysis-row-actions .edit-segment { color: #1d4ed8; background: #dbeafe; }
+@media (max-width: 600px) {
+  .gpx-analysis-actions { grid-template-columns: 1fr; }
+  .gpx-analysis-actions #exportAllGpxSegments { grid-column: auto; }
+}
+
+
+/* v26: meerdere GPX-bestanden en trajecten als één betrouwbare rijroute. */
+.gpx-start-progress {
+  margin: 9px 0 0 !important;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1d4ed8 !important;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+.gpx-start-option.is-loading { opacity: .68; cursor: wait; }
+.gpx-analysis-actions #useSelectedGpxSegment { grid-column: 1 / -1; }
+body.gpx-preparing .route-preview { cursor: wait; }
+.start-navigation-button.is-loading { position: relative; color: transparent; }
+.start-navigation-button.is-loading::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border: 3px solid rgba(5,46,22,.25);
+  border-top-color: #052e16;
+  border-radius: 999px;
+  animation: routeActionSpin .75s linear infinite;
+}
+
+/* Het GPX-startvenster blijft ook in liggende mobiele stand volledig zichtbaar. */
+@media (max-width: 899px) and (orientation: landscape) {
+  .gpx-start-sheet {
+    left: 50%;
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    width: min(620px, calc(100% - 28px));
+    max-height: calc(100% - 24px);
+    transform: translate(-50%, -50%);
+    border-radius: 22px;
+    padding-bottom: 16px;
+  }
+  .gpx-start-sheet .sheet-title-row { position: static; margin: -18px -16px 7px; }
+  .gpx-start-options { grid-template-columns: 1fr 1fr; gap: 9px; }
+  .gpx-start-option { min-height: 106px; align-content: center; }
+  .gpx-start-option small { font-size: 11px; }
+}
+
+@media (max-width: 520px) {
+  .gpx-analysis-actions #useSelectedGpxSegment { min-height: 52px; }
+}
+.gpx-start-sheet {
+  z-index: 120;
+  background: #fff !important;
+  color: var(--ink);
+  isolation: isolate;
+}
+.gpx-start-sheet .gpx-start-options,
+.gpx-start-sheet .sheet-title-row { position: relative; z-index: 1; }

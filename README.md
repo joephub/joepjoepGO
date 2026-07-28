@@ -1,27 +1,18 @@
-# joepjoepGO v25
+# joepjoepGO v26
 
-Statische GitHub Pages-versie van joepjoepGO met adresnavigatie, GPX-analyse, GPX-bewerking en GPX-naar-rijroute.
+Deze versie richt zich op het GPX-gedeelte.
 
-## Nieuw in v25
+## Nieuw
 
-- Zet een geladen GPX via GraphHopper Map Matching om naar een route over het wegennet, inclusief route-instructies.
-- Als kaartmatching niet lukt, wordt een rijroute berekend via meerdere representatieve GPX-punten.
-- Bij het starten op mobiel kies je tussen:
-  - eerst naar het officiële GPX-startpunt;
-  - aansluiten op de dichtstbijzijnde bruikbare plek verderop in de route.
-- Keer de volledige GPX om, inclusief start- en eindpunt.
-- Selecteer meerdere GPX-bestanden tegelijk of voeg later een tweede GPX toe. De delen worden zo nodig omgedraaid en met elkaar verbonden.
-- Bewerk echte GPX-punten op de kaart:
-  - één of meerdere punten aanklikken;
-  - selectie in één keer verwijderen;
-  - selecteren met een sleepvak;
-  - een geselecteerd punt verslepen;
-  - één of meerdere punten eerder of later in de routevolgorde plaatsen;
-  - een nieuw punt op de kaart toevoegen. Dit wordt ingevoegd in het dichtstbijzijnde routesegment.
-- Maak na het bewerken direct opnieuw een rijroute of exporteer een nieuwe GPX.
-- Start- en eindpunt zijn beschermd tegen onbedoeld verwijderen.
-- Ongedaan maken en volledig herstellen blijven beschikbaar.
+- Meerdere GPX-bestanden tegelijk selecteren of later toevoegen.
+- Alle tracks, tracksegmenten en door sprongen gevonden trajecten kunnen samen worden omgezet naar één rijroute.
+- Trajecten worden automatisch geordend en zo nodig omgekeerd om de openingen zo klein mogelijk te maken.
+- Openingen worden via GraphHopper over het wegennet verbonden. Alleen wanneer dat niet lukt blijft een zichtbare rechte noodverbinding over.
+- In de GPX-analyse kunnen één of meer trajecten worden geselecteerd en direct als één rijroute worden opgebouwd.
+- `Bewerk GPX` blijft zichtbaar; bij meerdere trajecten kies je eerst het traject dat je wilt bewerken.
+- Het mobiele keuzevenster voor het starten van een GPX-route is gestabiliseerd voor liggende weergave.
+- Dubbele foutmeldingen en dubbele tikken tijdens routeopbouw worden onderdrukt.
 
 ## Publiceren
 
-Upload alle bestanden uit deze map naar de root van je GitHub Pages-repository. Open de site daarna eenmalig met `?v=25` om zeker te weten dat de nieuwste bestanden worden geladen.
+Upload alle bestanden naar de hoofdmap van de GitHub Pages-repository en open de pagina daarna met `?v=26`.
