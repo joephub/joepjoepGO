@@ -40,7 +40,7 @@
     rotationFallback: false,
     fuelCandidates: [],
     gpxEditor: { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null },
-    gpxAnalysis: { sourceParts: [], segments: [], active: false }
+    gpxAnalysis: { sourceParts: [], segments: [], active: false, selectedIds: new Set() }
   };
 
   if (!window.maplibregl || !window.turf) {
@@ -630,33 +630,55 @@
     if (state.route) updateRouteProgress(state.progressKm || 0);
   }
 
+  function updateGpxAnalysisSelectionUi() {
+    const count = state.gpxAnalysis.selectedIds.size;
+    if ($('gpxSegmentSelectionCount')) $('gpxSegmentSelectionCount').textContent = count
+      ? `${count} traject${count === 1 ? '' : 'en'} geselecteerd`
+      : 'Geen trajecten geselecteerd';
+    if ($('exportSelectedGpxSegments')) $('exportSelectedGpxSegments').disabled = count === 0;
+  }
+
+  function zoomToGpxSegment(segment) {
+    const bounds = new maplibregl.LngLatBounds();
+    segment.coordinates.forEach(point => bounds.extend(point));
+    map.fitBounds(bounds, { padding: { top: 70, right: 70, bottom: 70, left: 70 }, duration: 400, maxZoom: 16 });
+  }
+
   function renderGpxAnalysis() {
     const list = $('gpxAnalysisList');
     if (!list) return;
     const segments = state.gpxAnalysis.segments;
     $('gpxAnalysisSummary').textContent = segments.length === 1
       ? 'Er is één doorlopend traject gevonden.'
-      : `${segments.length} afzonderlijke trajecten gevonden. Elk traject heeft een eigen kleur.`;
+      : `${segments.length} afzonderlijke trajecten gevonden. Vink trajecten aan om er samen één nieuw GPX-bestand van te maken.`;
     list.innerHTML = '';
     segments.forEach(segment => {
       const row = document.createElement('div');
       row.className = 'gpx-analysis-row';
-      row.innerHTML = `<span class="gpx-color-dot" style="background:${segment.color}"></span><div><strong>Traject ${segment.id}</strong><small>${escapeXml(segment.name)} · ${segment.distanceKm.toFixed(1)} km · ${segment.coordinates.length} punten</small><small>${escapeXml(segment.reason)}</small></div><button class="control-button">Exporteer</button>`;
-      row.querySelector('button').onclick = () => exportGpxSegment(segment);
-      row.onclick = event => {
-        if (event.target.tagName === 'BUTTON') return;
-        const bounds = new maplibregl.LngLatBounds();
-        segment.coordinates.forEach(point => bounds.extend(point));
-        map.fitBounds(bounds, { padding: 80, duration: 400, maxZoom: 16 });
+      row.dataset.segmentId = String(segment.id);
+      const checked = state.gpxAnalysis.selectedIds.has(segment.id);
+      row.innerHTML = `<label class="gpx-segment-check" title="Selecteer traject"><input type="checkbox" ${checked ? 'checked' : ''} aria-label="Selecteer traject ${segment.id}"><span></span></label><span class="gpx-color-dot" style="background:${segment.color}"></span><div class="gpx-analysis-info"><strong>Traject ${segment.id}</strong><small>${escapeXml(segment.name)} · ${segment.distanceKm.toFixed(1)} km · ${segment.coordinates.length} punten</small><small>${escapeXml(segment.reason)}</small></div><div class="gpx-analysis-row-actions"><button class="icon-button zoom-segment" title="Toon op kaart">⌖</button><button class="icon-button export-segment" title="Exporteer apart">⇩</button></div>`;
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      checkbox.onchange = () => {
+        if (checkbox.checked) state.gpxAnalysis.selectedIds.add(segment.id);
+        else state.gpxAnalysis.selectedIds.delete(segment.id);
+        row.classList.toggle('selected', checkbox.checked);
+        updateGpxAnalysisSelectionUi();
       };
+      row.classList.toggle('selected', checked);
+      row.querySelector('.zoom-segment').onclick = event => { event.stopPropagation(); zoomToGpxSegment(segment); };
+      row.querySelector('.export-segment').onclick = event => { event.stopPropagation(); exportGpxSegment(segment); };
+      row.querySelector('.gpx-analysis-info').onclick = () => zoomToGpxSegment(segment);
       list.appendChild(row);
     });
+    updateGpxAnalysisSelectionUi();
   }
 
   function openGpxAnalysis() {
     if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.');
     closeGpxEditor();
     state.gpxAnalysis.segments = analyseGpxParts(state.gpxAnalysis.sourceParts);
+    state.gpxAnalysis.selectedIds = new Set();
     state.gpxAnalysis.active = true;
     $('gpxAnalysisSheet').hidden = false;
     $('backdrop').hidden = false;
@@ -674,7 +696,7 @@
 
   function segmentGpxXml(segment) {
     const trackPoints = segment.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v18" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} - traject ${segment.id}</name></metadata>\n  <trk><name>${escapeXml(segment.name)} - traject ${segment.id}</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v19" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} - traject ${segment.id}</name></metadata>\n  <trk><name>${escapeXml(segment.name)} - traject ${segment.id}</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
   }
 
   function downloadText(text, fileName) {
@@ -694,6 +716,33 @@
 
   function exportAllGpxSegments() {
     state.gpxAnalysis.segments.forEach((segment, index) => setTimeout(() => exportGpxSegment(segment), index * 250));
+  }
+
+  function selectedGpxXml(segments) {
+    const baseName = state.gpxEditor.fileName.replace(/\.gpx$/i, '') || 'route';
+    const trackSegments = segments.map((segment, index) => {
+      const points = segment.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
+      return `    <trkseg>\n${points}\n    </trkseg>`;
+    }).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v19" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(baseName)} - samengestelde selectie</name></metadata>\n  <trk><name>${escapeXml(baseName)} - samengestelde selectie</name>\n${trackSegments}\n  </trk>\n</gpx>`;
+  }
+
+  function exportSelectedGpxSegments() {
+    const selected = state.gpxAnalysis.segments.filter(segment => state.gpxAnalysis.selectedIds.has(segment.id));
+    if (!selected.length) return status('Selecteer eerst minimaal één traject.');
+    const base = state.gpxEditor.fileName.replace(/\.gpx$/i,'') || 'route';
+    downloadText(selectedGpxXml(selected), `${base}-selectie-${selected.length}-trajecten.gpx`);
+    status(`${selected.length} traject${selected.length === 1 ? '' : 'en'} samengevoegd in één GPX.`);
+  }
+
+  function selectAllGpxSegments() {
+    state.gpxAnalysis.selectedIds = new Set(state.gpxAnalysis.segments.map(segment => segment.id));
+    renderGpxAnalysis();
+  }
+
+  function clearGpxSegmentSelection() {
+    state.gpxAnalysis.selectedIds.clear();
+    renderGpxAnalysis();
   }
 
   function gpxPointFeatures() {
@@ -895,7 +944,7 @@
     const coordinates = state.gpxEditor.editCoordinates;
     if (coordinates.length < 2) return status('Er zijn onvoldoende punten om te exporteren.');
     const trackPoints = coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v18" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v19" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
     const blob = new Blob([xml], { type: 'application/gpx+xml;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -914,7 +963,7 @@
       const { parts, coordinates } = parseGpx(xml);
       if (coordinates.length < 2) throw new Error('Geen bruikbare routepunten gevonden.');
       const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
-      state.gpxAnalysis = { sourceParts: parts.map(part => ({ ...part, coordinates: part.coordinates.map(point => [...point]) })), segments: [], active: false };
+      state.gpxAnalysis = { sourceParts: parts.map(part => ({ ...part, coordinates: part.coordinates.map(point => [...point]) })), segments: [], active: false, selectedIds: new Set() };
       state.gpxEditor = {
         active: false,
         fileName: file.name.replace(/\.gpx$/i, '') || 'route',
@@ -1202,7 +1251,7 @@
     state.original = [];
     removeSelectedMarker();
     state.gpxEditor = { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null };
-    state.gpxAnalysis = { sourceParts: [], segments: [], active: false };
+    state.gpxAnalysis = { sourceParts: [], segments: [], active: false, selectedIds: new Set() };
     if ($('analyseGpx')) $('analyseGpx').hidden = true;
     map.getSource('gpx-analysis')?.setData(emptyGeoJson());
     if ($('editGpx')) $('editGpx').hidden = true;
@@ -1258,6 +1307,9 @@
   bind('analyseGpx', 'click', openGpxAnalysis);
   bind('closeGpxAnalysis', 'click', closeGpxAnalysis);
   bind('exportAllGpxSegments', 'click', exportAllGpxSegments);
+  bind('exportSelectedGpxSegments', 'click', exportSelectedGpxSegments);
+  bind('selectAllGpxSegments', 'click', selectAllGpxSegments);
+  bind('clearGpxSegmentSelection', 'click', clearGpxSegmentSelection);
   bind('closeGpxEditor', 'click', closeGpxEditor);
   bind('restoreGpx', 'click', restoreGpx);
   bind('exportGpx', 'click', exportGpx);

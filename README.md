@@ -1,4 +1,4 @@
-# joepjoepGO v18
+# joepjoepGO v19
 
 Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-bewerker.
 
@@ -13,3 +13,6 @@ Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-be
 
 ## GPX-analyse
 Na het laden van een GPX kan **Analyseer GPX** worden gekozen. Expliciete tracks/tracksegmenten en abrupte geografische sprongen worden als aparte gekleurde trajecten getoond. Elk traject is afzonderlijk als GPX te exporteren.
+
+
+Nieuw in v19: compact analysepaneel, kaart blijft bedienbaar, trajecten aanvinken en als één GPX met meerdere tracksegmenten exporteren.

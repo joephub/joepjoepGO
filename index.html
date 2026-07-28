@@ -13,7 +13,7 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v18</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v19</div>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
   <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
 
@@ -139,8 +139,16 @@
       <button id="closeGpxAnalysis" class="text-button">Sluiten</button>
     </div>
     <p id="gpxAnalysisSummary" class="gpx-analysis-summary"></p>
+    <div class="gpx-analysis-toolbar">
+      <button id="selectAllGpxSegments" class="control-button">Selecteer alles</button>
+      <button id="clearGpxSegmentSelection" class="control-button">Wis selectie</button>
+      <span id="gpxSegmentSelectionCount" class="gpx-selection-count">Geen trajecten geselecteerd</span>
+    </div>
     <div id="gpxAnalysisList" class="gpx-analysis-list"></div>
-    <button id="exportAllGpxSegments" class="control-button primary full-width">Exporteer alle trajecten apart</button>
+    <div class="gpx-analysis-actions">
+      <button id="exportSelectedGpxSegments" class="control-button primary" disabled>Maak 1 GPX van selectie</button>
+      <button id="exportAllGpxSegments" class="control-button">Exporteer alle trajecten apart</button>
+    </div>
   </section>
 
   <section id="fuelSheet" class="sheet fuel-sheet" hidden>
@@ -155,6 +163,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=18"></script>
+<script src="./app.js?v=19"></script>
 </body>
 </html>

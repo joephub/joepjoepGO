@@ -524,3 +524,65 @@ body.gpx-box-selecting #map canvas { cursor: crosshair !important; }
 .gpx-analysis-row small { display: block; color: #64748b; overflow-wrap: anywhere; }
 .gpx-color-dot { width: 14px; height: 14px; border-radius: 999px; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #cbd5e1; }
 @media (min-width: 900px) { .gpx-analysis-sheet { width: min(560px, 38vw); left: auto; right: 12px; bottom: 12px; max-height: calc(100vh - 24px); border-radius: 22px; } }
+
+
+/* GPX-analyse v19: kaart blijft bruikbaar en trajecten zijn combineerbaar */
+.gpx-analysis-sheet {
+  top: auto;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(120px, 1fr) auto;
+}
+.gpx-analysis-toolbar {
+  display: grid;
+  grid-template-columns: auto auto minmax(120px, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.gpx-analysis-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gpx-analysis-list { min-height: 0; max-height: none; overflow: auto; margin-bottom: 10px; padding-right: 3px; }
+.gpx-analysis-row {
+  grid-template-columns: 26px 16px minmax(0,1fr) auto;
+  padding: 9px;
+  gap: 8px;
+}
+.gpx-analysis-row.selected { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); background: #eff6ff; }
+.gpx-analysis-info { cursor: pointer; }
+.gpx-analysis-row-actions { display: flex !important; gap: 5px; }
+.icon-button {
+  width: 34px; height: 34px; border: 1px solid #dbe3ee; border-radius: 10px;
+  background: #fff; font-weight: 900; cursor: pointer; display: grid; place-items: center;
+}
+.icon-button:hover { background: #f1f5f9; }
+.gpx-segment-check { display: grid; place-items: center; cursor: pointer; }
+.gpx-segment-check input { position: absolute; opacity: 0; pointer-events: none; }
+.gpx-segment-check span { width: 20px; height: 20px; border: 2px solid #94a3b8; border-radius: 6px; background: #fff; position: relative; }
+.gpx-segment-check input:checked + span { background: #2563eb; border-color: #2563eb; }
+.gpx-segment-check input:checked + span::after { content: '✓'; color: #fff; font-size: 14px; font-weight: 900; position: absolute; inset: -1px 0 0 2px; }
+
+@media (min-width: 900px) {
+  body:has(.gpx-analysis-sheet:not([hidden])) .sheet-backdrop { display: none !important; }
+  .gpx-analysis-sheet {
+    width: min(430px, 34vw);
+    height: calc(100vh - 24px);
+    left: auto; right: 12px; top: 12px; bottom: auto;
+    max-height: none;
+    border-radius: 20px;
+    box-shadow: 0 14px 45px rgba(15,23,42,.22);
+  }
+  body:has(.gpx-analysis-sheet:not([hidden])) .maplibregl-ctrl-top-right { right: 445px; }
+}
+
+@media (max-width: 899px) {
+  .gpx-analysis-sheet {
+    height: min(48vh, 430px);
+    max-height: 48vh;
+    border-radius: 20px 20px 0 0;
+  }
+  .gpx-analysis-toolbar { grid-template-columns: 1fr 1fr; }
+  .gpx-analysis-toolbar .gpx-selection-count { grid-column: 1 / -1; }
+  .gpx-analysis-actions { grid-template-columns: 1fr; }
+  .gpx-analysis-row { grid-template-columns: 24px 14px minmax(0,1fr) auto; }
+  .gpx-analysis-row small:last-child { display: none; }
+}
