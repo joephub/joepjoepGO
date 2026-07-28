@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <link rel="manifest" href="./manifest.webmanifest?v=24" />
+  <link rel="manifest" href="./manifest.webmanifest?v=25" />
   <link rel="icon" href="./icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="./styles.css?v=24" />
+  <link rel="stylesheet" href="./styles.css?v=25" />
   <title>joepjoepGO</title>
 </head>
 <body>
@@ -16,7 +16,7 @@
   <div id="turnAlert" class="turn-alert" role="status" aria-live="polite" aria-label="Afslag binnen 500 meter" hidden>
     <span class="turn-alert-symbol" aria-hidden="true">!</span>
   </div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v24</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v25</div>
   <button id="settings" class="floating-button settings-button" title="Instellingen" aria-label="Instellingen">⚙</button>
   <button id="modeBack" class="floating-button mode-back-button" title="Terug naar startkeuze" aria-label="Terug naar startkeuze" hidden>←</button>
   <button id="layoutToggle" class="floating-button layout-toggle" title="Draai navigatiescherm" aria-label="Draai navigatiescherm" hidden>↻</button>
@@ -101,8 +101,11 @@
       <div><span>Trajecten</span><strong id="previewSegments">-</strong></div>
     </div>
     <div class="route-preview-actions">
+      <button id="prepareGpxRoute" class="compact-button primary" hidden>Maak rijroute</button>
+      <button id="reverseGpx" class="compact-button" hidden>↔ Keer om</button>
       <button id="analyseGpx" class="compact-button" hidden>Analyse</button>
       <button id="editGpx" class="compact-button" hidden>Bewerk</button>
+      <button id="appendGpx" class="compact-button" hidden>＋ Voeg GPX toe</button>
       <button id="overview" class="compact-button">Overzicht</button>
       <button id="replaceGpx" class="compact-button" hidden>Andere GPX</button>
       <button id="clear" class="compact-button danger">Wis</button>
@@ -140,7 +143,7 @@
     </div>
   </aside>
 
-  <input id="gpxFile" class="hidden-file" type="file" accept=".gpx,application/gpx+xml" />
+  <input id="gpxFile" class="hidden-file" type="file" accept=".gpx,application/gpx+xml" multiple />
 
   <div id="backdrop" class="sheet-backdrop" hidden></div>
 
@@ -188,15 +191,20 @@
       <button id="closeGpxEditor" class="text-button">Sluiten</button>
     </div>
     <div class="gpx-editor-toolbar">
+      <button id="addGpxPoint" class="control-button">＋ Punt toevoegen</button>
       <button id="boxSelectGpx" class="control-button">▭ Selectievak</button>
       <button id="deleteSelectedGpx" class="control-button danger" disabled>Verwijder selectie</button>
+      <button id="moveGpxPointUp" class="control-button" disabled>↑ Eerder</button>
+      <button id="moveGpxPointDown" class="control-button" disabled>↓ Later</button>
+      <button id="clearGpxPointSelection" class="control-button" disabled>Geen selectie</button>
       <button id="undoGpx" class="control-button" disabled>↶ Ongedaan</button>
       <span id="gpxSelectionCount" class="gpx-selection-count">Geen punten geselecteerd</span>
     </div>
-    <p class="gpx-editor-help">Bij grote GPX-bestanden worden alleen voldoende handgrepen getoond om de kaart snel te houden. Het selectievak controleert wel alle routepunten.</p>
+    <p class="gpx-editor-help">Klik punten om ze toe te voegen aan de selectie. Een enkel geselecteerd punt kun je slepen of met Eerder/Later in de routevolgorde verplaatsen. Met Punt toevoegen klik je een nieuwe locatie op de kaart; die wordt tussen de twee dichtstbijzijnde routepunten geplaatst.</p>
     <div id="gpxPointList" class="gpx-point-list"></div>
     <div class="gpx-editor-actions">
       <button id="restoreGpx" class="control-button">↺ Alles herstellen</button>
+      <button id="prepareEditedGpx" class="control-button">Maak rijroute</button>
       <button id="exportGpx" class="control-button primary">Exporteer nieuwe GPX</button>
     </div>
   </section>
@@ -231,6 +239,24 @@
     </div>
   </section>
 
+  <section id="gpxStartSheet" class="sheet gpx-start-sheet" hidden>
+    <div class="panel-title-row sheet-title-row">
+      <div>
+        <h2>Waar wil je de GPX oppakken?</h2>
+        <p class="editor-subtitle">Kies hoe joepjoepGO vanaf je huidige locatie met de GPX-route begint.</p>
+      </div>
+      <button id="closeGpxStartSheet" class="text-button">Sluiten</button>
+    </div>
+    <div class="gpx-start-options">
+      <button id="gpxNavigateToStart" class="gpx-start-option" type="button">
+        <span class="gpx-start-icon">A</span><span><strong>Eerst naar het startpunt</strong><small>Navigeer naar het officiële begin en volg daarna de volledige GPX.</small><em id="gpxStartDistanceText">Afstand wordt bepaald met GPS</em></span>
+      </button>
+      <button id="gpxJoinNearest" class="gpx-start-option" type="button">
+        <span class="gpx-start-icon">⌖</span><span><strong>Zo dicht mogelijk instappen</strong><small>Rijd naar het dichtstbijzijnde bruikbare punt en vervolg de GPX vanaf daar.</small><em id="gpxNearestDistanceText">Afstand wordt bepaald met GPS</em></span>
+      </button>
+    </div>
+  </section>
+
   <section id="fuelSheet" class="sheet fuel-sheet" hidden>
     <div class="panel-title-row sheet-title-row">
       <h2>Tankstation kiezen</h2>
@@ -243,6 +269,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=24"></script>
+<script src="./app.js?v=25"></script>
 </body>
 </html>

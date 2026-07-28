@@ -643,3 +643,64 @@ body.navigation-paused .turn-alert { display: none !important; }
   body.navigation-active.layout-landscape .nav-stat-field strong { font-size: 19px; }
   body.navigation-active.layout-landscape .route-action { width: 44px; height: 44px; font-size: 20px; }
 }
+
+
+/* v25: uitgebreide GPX-voorbereiding en editor */
+.gpx-start-options { display: grid; gap: 10px; margin-top: 12px; }
+.gpx-start-option { width: 100%; border: 1px solid var(--line); border-radius: 17px; background: #fff; padding: 13px; display: grid; grid-template-columns: 46px minmax(0,1fr); gap: 11px; align-items: center; text-align: left; box-shadow: 0 5px 16px rgba(15,23,42,.08); }
+.gpx-start-option:hover { border-color: var(--blue); background: #eff6ff; }
+.gpx-start-option > span:last-child { min-width: 0; display: grid; gap: 3px; }
+.gpx-start-option strong { font-size: 15px; color: var(--ink); }
+.gpx-start-option small { color: var(--muted); line-height: 1.35; }
+.gpx-start-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; background: #dbeafe; color: #1d4ed8; font-weight: 900; font-size: 18px; }
+body.gpx-point-adding #map canvas { cursor: crosshair !important; }
+.gpx-point-row-actions { display: flex; gap: 4px; align-items: center; }
+.gpx-point-move { width: 30px; height: 30px; border: 0; border-radius: 8px; background: #e2e8f0; color: var(--ink); font-weight: 900; }
+.gpx-editor-toolbar { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.gpx-editor-toolbar .gpx-selection-count { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .gpx-editor-toolbar { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .gpx-start-option { padding: 11px; grid-template-columns: 42px minmax(0,1fr); }
+  .gpx-start-icon { width: 40px; height: 40px; }
+}
+
+/* v25 GPX-routebouw, instapkeuze en uitgebreid puntenbeheer */
+.gpx-start-option em {
+  display: block;
+  margin-top: 3px;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+.control-button.is-loading,
+.compact-button.is-loading {
+  position: relative;
+  cursor: wait;
+  opacity: .78;
+}
+.control-button.is-loading::before,
+.compact-button.is-loading::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 7px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  vertical-align: -2px;
+  animation: routeActionSpin .75s linear infinite;
+}
+.gpx-editor-actions { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.gpx-point-row.is-selected { outline: 2px solid #2563eb; background: #eff6ff; }
+.gpx-point-row-actions button:disabled { opacity: .35; cursor: not-allowed; }
+body.gpx-point-adding .gpx-editor-help::after {
+  content: " Klik nu op de gewenste plek op de kaart.";
+  color: #1d4ed8;
+  font-weight: 800;
+}
+@media (max-width: 600px) {
+  .gpx-editor-actions { grid-template-columns: 1fr; }
+  .gpx-start-option em { font-size: 10px; }
+}

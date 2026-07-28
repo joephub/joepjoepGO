@@ -1,23 +1,27 @@
-# joepjoepGO v24
+# joepjoepGO v25
 
-Deze versie verbetert de mobiele liggende navigatie en de visuele waarschuwing voor afslagen.
+Statische GitHub Pages-versie van joepjoepGO met adresnavigatie, GPX-analyse, GPX-bewerking en GPX-naar-rijroute.
 
-## Gewijzigd
+## Nieuw in v25
 
-- Het informatiepaneel in mobiele liggende stand gebruikt de beschikbare hoogte beter.
-- De volgende manoeuvre, afstand en resterende ritgegevens zijn in liggende stand duidelijk groter.
-- De GraphHopper-codes voor **links/rechts aanhouden** (`-7` en `7`) worden nu als diagonale pijlen getoond in plaats van als rechtdoor.
-- Normale bochten gebruiken duidelijkere pijlen: links/rechts horizontaal, licht afbuigen diagonaal en scherp afbuigen schuin omlaag.
-- Wanneer een API-antwoord richtingtekst bevat maar een neutrale code teruggeeft, wordt de richting ook uit de tekst afgeleid.
-- Binnen 500 meter van een echte manoeuvre knippert linksboven op de kaart een klein geel waarschuwingsteken.
-- Het waarschuwingsteken verdwijnt bij pauzeren, stoppen, rechtdoor rijden of wanneer de manoeuvre verder dan 500 meter ligt.
+- Zet een geladen GPX via GraphHopper Map Matching om naar een route over het wegennet, inclusief route-instructies.
+- Als kaartmatching niet lukt, wordt een rijroute berekend via meerdere representatieve GPX-punten.
+- Bij het starten op mobiel kies je tussen:
+  - eerst naar het officiële GPX-startpunt;
+  - aansluiten op de dichtstbijzijnde bruikbare plek verderop in de route.
+- Keer de volledige GPX om, inclusief start- en eindpunt.
+- Selecteer meerdere GPX-bestanden tegelijk of voeg later een tweede GPX toe. De delen worden zo nodig omgedraaid en met elkaar verbonden.
+- Bewerk echte GPX-punten op de kaart:
+  - één of meerdere punten aanklikken;
+  - selectie in één keer verwijderen;
+  - selecteren met een sleepvak;
+  - een geselecteerd punt verslepen;
+  - één of meerdere punten eerder of later in de routevolgorde plaatsen;
+  - een nieuw punt op de kaart toevoegen. Dit wordt ingevoegd in het dichtstbijzijnde routesegment.
+- Maak na het bewerken direct opnieuw een rijroute of exporteer een nieuwe GPX.
+- Start- en eindpunt zijn beschermd tegen onbedoeld verwijderen.
+- Ongedaan maken en volledig herstellen blijven beschikbaar.
 
-## Publiceren op GitHub Pages
+## Publiceren
 
-1. Pak de ZIP uit.
-2. Upload alle bestanden naar de hoofdmap van de GitHub-repository en vervang de bestaande bestanden.
-3. Commit de wijzigingen.
-4. Open de site met `?v=24`, bijvoorbeeld `https://joephub.github.io/maps/?v=24`.
-5. Controleer linksonder of **joepjoepGO v24** staat.
-
-De service worker is tijdens de ontwikkelfase bewust uitgeschakeld om oude versies uit de browsercache te voorkomen.
+Upload alle bestanden uit deze map naar de root van je GitHub Pages-repository. Open de site daarna eenmalig met `?v=25` om zeker te weten dat de nieuwste bestanden worden geladen.
