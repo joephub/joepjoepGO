@@ -2,13 +2,18 @@
   "name": "joepjoepGO",
   "short_name": "joepjoepGO",
   "description": "joepjoepGO: GPS-navigatie, GPX-analyse en GPX-bewerking.",
-  "start_url": "./",
+  "start_url": "./?v=28",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#0f172a",
   "background_color": "#0f172a",
   "icons": [
-    {"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }

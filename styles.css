@@ -741,3 +741,84 @@ body.gpx-point-adding .gpx-editor-help::after {
 /* v27: vier vaste oriëntatiestanden (0°, 90°, 180° en 270°). */
 body.force-rotate-90, body.force-rotate-180, body.force-rotate-270 { overscroll-behavior: none; }
 body.navigation-active .layout-toggle { font-size: 22px; touch-action: manipulation; }
+
+/* v28: hybride/exacte GPX-routebouw en vrij instelbaar startpunt */
+.gpx-route-breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+.gpx-route-breakdown[hidden] { display: none !important; }
+.route-kind {
+  min-width: 0;
+  padding: 8px 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: center;
+}
+.route-kind i { width: 9px; height: 9px; border-radius: 999px; grid-row: 1 / span 2; }
+.route-kind strong { min-width: 0; font-size: 13px; line-height: 1.1; overflow-wrap: anywhere; }
+.route-kind small { color: #64748b; font-size: 9px; line-height: 1.15; text-transform: uppercase; letter-spacing: .025em; }
+.route-kind.matched i { background: #2563eb; }
+.route-kind.exact i { background: #f97316; }
+.route-kind.connector i { background: #16a34a; }
+.route-kind.unresolved i { background: #dc2626; }
+
+.gpx-route-mode-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.gpx-route-mode-option {
+  width: 100%;
+  min-height: 132px;
+  padding: 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: 18px;
+  background: #fff;
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  text-align: left;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .07);
+}
+.gpx-route-mode-option:hover, .gpx-route-mode-option:focus-visible { border-color: var(--blue); background: #eff6ff; outline: none; }
+.gpx-route-mode-option.exact:hover, .gpx-route-mode-option.exact:focus-visible { border-color: #f97316; background: #fff7ed; }
+.gpx-route-mode-option span:last-child { min-width: 0; display: grid; gap: 6px; }
+.gpx-route-mode-option strong { font-size: 16px; line-height: 1.15; }
+.gpx-route-mode-option small { color: #475569; font-size: 12px; line-height: 1.4; }
+.gpx-route-mode-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; background: #dbeafe; color: #1d4ed8; font-size: 25px; font-weight: 900; }
+.gpx-route-mode-option.exact .gpx-route-mode-icon { background: #ffedd5; color: #c2410c; }
+.gpx-route-legend { display: flex; flex-wrap: wrap; gap: 8px 13px; margin-top: 12px; padding: 10px 11px; border-radius: 13px; background: #f8fafc; color: #475569; font-size: 11px; font-weight: 750; }
+.gpx-route-legend span { display: inline-flex; gap: 6px; align-items: center; }
+.gpx-route-legend i { width: 16px; height: 5px; border-radius: 999px; }
+.gpx-route-legend i.matched { background: #2563eb; }
+.gpx-route-legend i.exact { background: #f97316; }
+.gpx-route-legend i.connector { background: #16a34a; }
+.gpx-route-legend i.unresolved { background: #dc2626; }
+
+.gpx-point-start {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: #cffafe;
+  color: #0e7490;
+  font-weight: 900;
+}
+.gpx-point-row:first-child .gpx-point-number { background: #0ea5e9; }
+.gpx-point-row:last-child .gpx-point-number { background: #ef4444; }
+.gpx-point-row-actions { flex-wrap: wrap; justify-content: flex-end; }
+
+@media (max-width: 700px) {
+  .gpx-route-breakdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gpx-route-mode-options { grid-template-columns: 1fr; }
+  .gpx-route-mode-option { min-height: 0; padding: 12px; }
+  .gpx-route-mode-sheet { max-height: 92dvh; }
+  .gpx-point-row { grid-template-columns: 30px minmax(0, 1fr); }
+  .gpx-point-row-actions { grid-column: 1 / -1; justify-content: flex-end; max-width: none; }
+  .gpx-point-row-actions button { width: 34px; height: 32px; }
+}

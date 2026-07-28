@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <link rel="manifest" href="./manifest.webmanifest?v=27" />
+  <link rel="manifest" href="./manifest.webmanifest?v=28" />
   <link rel="icon" href="./icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="./styles.css?v=27" />
+  <link rel="stylesheet" href="./styles.css?v=28" />
   <title>joepjoepGO</title>
 </head>
 <body>
@@ -16,7 +16,7 @@
   <div id="turnAlert" class="turn-alert" role="status" aria-live="polite" aria-label="Afslag binnen 500 meter" hidden>
     <span class="turn-alert-symbol" aria-hidden="true">!</span>
   </div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v27</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v28</div>
   <button id="settings" class="floating-button settings-button" title="Instellingen" aria-label="Instellingen">⚙</button>
   <button id="modeBack" class="floating-button mode-back-button" title="Terug naar startkeuze" aria-label="Terug naar startkeuze" hidden>←</button>
   <button id="layoutToggle" class="floating-button layout-toggle" title="Draai navigatiescherm" aria-label="Draai navigatiescherm" hidden>↻</button>
@@ -99,6 +99,12 @@
       <div><span>Afstand</span><strong id="previewDistance">-</strong></div>
       <div><span>Tijd</span><strong id="previewTime">-</strong></div>
       <div><span>Trajecten</span><strong id="previewSegments">-</strong></div>
+    </div>
+    <div id="gpxRouteBreakdown" class="gpx-route-breakdown" hidden>
+      <span class="route-kind matched"><i></i><strong id="matchedRouteDistance">0 km</strong><small>op weg</small></span>
+      <span class="route-kind exact"><i></i><strong id="exactRouteDistance">0 km</strong><small>exacte GPX</small></span>
+      <span class="route-kind connector"><i></i><strong id="connectorRouteDistance">0 km</strong><small>verbinding</small></span>
+      <span id="unresolvedRouteKind" class="route-kind unresolved" hidden><i></i><strong id="unresolvedRouteDistance">0 km</strong><small>controle nodig</small></span>
     </div>
     <div class="route-preview-actions">
       <button id="prepareGpxRoute" class="compact-button primary" hidden>Maak rijroute</button>
@@ -196,11 +202,12 @@
       <button id="deleteSelectedGpx" class="control-button danger" disabled>Verwijder selectie</button>
       <button id="moveGpxPointUp" class="control-button" disabled>↑ Eerder</button>
       <button id="moveGpxPointDown" class="control-button" disabled>↓ Later</button>
+      <button id="setGpxStartPoint" class="control-button" disabled>⚑ Maak startpunt</button>
       <button id="clearGpxPointSelection" class="control-button" disabled>Geen selectie</button>
       <button id="undoGpx" class="control-button" disabled>↶ Ongedaan</button>
       <span id="gpxSelectionCount" class="gpx-selection-count">Geen punten geselecteerd</span>
     </div>
-    <p class="gpx-editor-help">Klik punten om ze toe te voegen aan de selectie. Een enkel geselecteerd punt kun je slepen of met Eerder/Later in de routevolgorde verplaatsen. Met Punt toevoegen klik je een nieuwe locatie op de kaart; die wordt tussen de twee dichtstbijzijnde routepunten geplaatst.</p>
+    <p class="gpx-editor-help">Klik punten om ze te selecteren. Je mag ook het huidige startpunt verwijderen; het eerstvolgende punt wordt dan automatisch het nieuwe startpunt. Met <strong>Maak startpunt</strong> kun je een ander geselecteerd punt als begin aanwijzen. Een enkel punt kun je slepen of met Eerder/Later verplaatsen. Met Punt toevoegen plaats je een nieuw punt tussen de twee dichtstbijzijnde routepunten.</p>
     <div id="gpxPointList" class="gpx-point-list"></div>
     <div class="gpx-editor-actions">
       <button id="restoreGpx" class="control-button">↺ Alles herstellen</button>
@@ -240,6 +247,40 @@
     </div>
   </section>
 
+  <section id="gpxRouteModeSheet" class="sheet gpx-route-mode-sheet" hidden>
+    <div class="panel-title-row sheet-title-row">
+      <div>
+        <h2>Hoe wil je deze GPX rijden?</h2>
+        <p id="gpxRouteModeSummary" class="editor-subtitle">Kies hoe joepjoepGO de geselecteerde trajecten verwerkt.</p>
+      </div>
+      <button id="closeGpxRouteMode" class="text-button">Sluiten</button>
+    </div>
+    <div class="gpx-route-mode-options">
+      <button id="chooseHybridGpxRoute" class="gpx-route-mode-option hybrid" type="button">
+        <span class="gpx-route-mode-icon">≈</span>
+        <span><strong>Hybride route</strong><small>Gebruik echte wegen waar de voorgestelde lijn binnen de ingestelde afstand van de GPX blijft. Behoud offroad- en twijfelachtige delen exact.</small></span>
+      </button>
+      <button id="chooseExactGpxRoute" class="gpx-route-mode-option exact" type="button">
+        <span class="gpx-route-mode-icon">⌁</span>
+        <span><strong>GPX exact volgen</strong><small>Verander geen bestaande GPX-punten. Alleen lege stukken tussen losse trajecten worden over de weg verbonden.</small></span>
+      </button>
+    </div>
+    <label for="gpxHybridTolerance">Maximale afwijking in hybride modus</label>
+    <select id="gpxHybridTolerance">
+      <option value="10">10 meter</option>
+      <option value="20">20 meter</option>
+      <option value="30" selected>30 meter</option>
+      <option value="50">50 meter</option>
+    </select>
+    <div class="gpx-route-legend" aria-label="Legenda GPX-route">
+      <span><i class="matched"></i> Wegroute</span>
+      <span><i class="exact"></i> Exact GPX/offroad</span>
+      <span><i class="connector"></i> Nieuwe verbinding</span>
+      <span><i class="unresolved"></i> Niet opgelost</span>
+    </div>
+    <p class="settings-note">De oorspronkelijke GPX blijft altijd beschikbaar. joepjoepGO vervangt in hybride modus alleen delen die aantoonbaar dicht genoeg bij de oorspronkelijke lijn blijven.</p>
+  </section>
+
   <section id="gpxStartSheet" class="sheet gpx-start-sheet" hidden>
     <div class="panel-title-row sheet-title-row">
       <div>
@@ -275,6 +316,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=27"></script>
+<script src="./app.js?v=28"></script>
 </body>
 </html>

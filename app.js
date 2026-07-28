@@ -2,7 +2,7 @@
   'use strict';
 
   const APP_NAME = 'joepjoepGO';
-  const APP_VERSION = '27';
+  const APP_VERSION = '28';
   const $ = (id) => document.getElementById(id);
   const KEY = 'joepjoepgo-settings-v1';
   const LEGACY_KEY = 'routerijder-settings';
@@ -74,6 +74,10 @@
     gpxPrepareWarnings: [],
     gpxBaseRoute: null,
     gpxActiveSegmentIds: [],
+    gpxRouteMode: ['hybrid', 'exact'].includes(saved.gpxRouteMode) ? saved.gpxRouteMode : 'hybrid',
+    gpxHybridToleranceMeters: [10, 20, 30, 50].includes(Number(saved.gpxHybridToleranceMeters)) ? Number(saved.gpxHybridToleranceMeters) : 30,
+    gpxPendingPreparation: null,
+    gpxStartAfterPrepare: false,
     gpxStartStrategy: null,
     gpxStartWaiting: false,
     nextManeuver: null,
@@ -240,7 +244,9 @@
       keepAwake: state.keepAwake,
       avatar: state.avatar,
       customAvatar: state.customAvatar,
-      gpxJumpThresholdMeters: state.gpxAnalysis.jumpThresholdMeters
+      gpxJumpThresholdMeters: state.gpxAnalysis.jumpThresholdMeters,
+      gpxRouteMode: state.gpxRouteMode,
+      gpxHybridToleranceMeters: state.gpxHybridToleranceMeters
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(payload));
@@ -296,7 +302,9 @@
   map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
   map.on('load', () => {
+    addGpxReferenceLayers();
     addRouteLayer('route-casing', '#ffffff', 13, 0.96);
+    addRouteComponentLayers();
     addRouteLayer('route-traveled', '#94a3b8', 8, 0.72);
     addRouteLayer('route-remaining', '#2563eb', 8, 0.98);
     addRouteLayer('rejoin-casing', '#ffffff', 12, 0.94);
@@ -322,6 +330,57 @@
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': color, 'line-width': width, 'line-opacity': opacity }
     });
+  }
+
+  function addGpxReferenceLayers() {
+    map.addSource('gpx-original-reference', { type: 'geojson', data: emptyGeoJson() });
+    map.addLayer({
+      id: 'gpx-original-reference',
+      type: 'line',
+      source: 'gpx-original-reference',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#475569',
+        'line-width': 3,
+        'line-opacity': 0.7,
+        'line-dasharray': [1.2, 1.5]
+      }
+    });
+  }
+
+  function addRouteComponentLayers() {
+    map.addSource('route-components', { type: 'geojson', data: emptyGeoJson() });
+    map.addLayer({
+      id: 'route-components-casing',
+      type: 'line',
+      source: 'route-components',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#ffffff', 'line-width': 12, 'line-opacity': 0.96 }
+    });
+    map.addLayer({
+      id: 'route-components-lines',
+      type: 'line',
+      source: 'route-components',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': [
+          'match', ['get', 'kind'],
+          'matched', '#2563eb',
+          'exact', '#f97316',
+          'connector', '#16a34a',
+          'access', '#7c3aed',
+          'unresolved', '#dc2626',
+          '#2563eb'
+        ],
+        'line-width': 8,
+        'line-opacity': 0.99
+      }
+    });
+  }
+
+  function clearRouteComponentLayers() {
+    map.getSource('route-components')?.setData(emptyGeoJson());
+    map.getSource('gpx-original-reference')?.setData(emptyGeoJson());
   }
 
   function addGpxPreviewLayers() {
@@ -362,8 +421,8 @@
       type: 'circle',
       source: 'gpx-edit-points',
       paint: {
-        'circle-radius': ['case', ['boolean', ['get', 'selected'], false], 7, 4],
-        'circle-color': ['case', ['boolean', ['get', 'selected'], false], '#dc2626', '#2563eb'],
+        'circle-radius': ['case', ['boolean', ['get', 'selected'], false], 8, ['match', ['get', 'role'], 'start', 7, 'end', 7, 4]],
+        'circle-color': ['case', ['boolean', ['get', 'selected'], false], '#dc2626', ['match', ['get', 'role'], 'start', '#0ea5e9', 'end', '#ef4444', '#2563eb']],
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': 2,
         'circle-opacity': 0.95
@@ -437,20 +496,20 @@
     if ($('prepareGpxRoute')) {
       const button = $('prepareGpxRoute');
       button.hidden = !canPrepareGpx;
-      button.disabled = state.gpxRoutePreparing || state.gpxRoutePrepared;
+      button.disabled = state.gpxRoutePreparing;
       button.classList.toggle('is-loading', state.gpxRoutePreparing);
       button.setAttribute('aria-busy', state.gpxRoutePreparing ? 'true' : 'false');
       button.textContent = state.gpxRoutePreparing
         ? (state.gpxPrepareProgress || 'Rijroute maken…')
         : state.gpxRoutePrepared
-          ? '✓ Rijroute klaar'
+          ? 'Wijzig rijmodus'
           : selectedSegments > 1
-            ? `Maak 1 rijroute (${selectedSegments})`
-            : 'Maak rijroute';
+            ? `Kies rijmodus (${selectedSegments})`
+            : 'Kies rijmodus';
     }
     if ($('prepareEditedGpx')) {
-      $('prepareEditedGpx').disabled = state.gpxRoutePreparing || state.gpxRoutePrepared;
-      $('prepareEditedGpx').textContent = state.gpxRoutePreparing ? (state.gpxPrepareProgress || 'Rijroute maken…') : state.gpxRoutePrepared ? '✓ Rijroute klaar' : 'Maak rijroute';
+      $('prepareEditedGpx').disabled = state.gpxRoutePreparing;
+      $('prepareEditedGpx').textContent = state.gpxRoutePreparing ? (state.gpxPrepareProgress || 'Rijroute maken…') : state.gpxRoutePrepared ? 'Wijzig rijmodus' : 'Kies rijmodus';
     }
     if ($('replaceGpx')) $('replaceGpx').hidden = !hasGpx;
     if ($('startNavigation')) {
@@ -465,7 +524,10 @@
     updateGpxAnalysisSelectionUi();
     renderRoutePreview();
     applyLayoutMode();
-    if (state.mapReady) window.requestAnimationFrame(() => map.resize());
+    if (state.mapReady) {
+      updateOriginalGpxReference();
+      window.requestAnimationFrame(() => map.resize());
+    }
   }
 
   function renderRoutePreview() {
@@ -479,23 +541,35 @@
       return;
     }
 
+    const breakdown = $('gpxRouteBreakdown');
+    if (breakdown) breakdown.hidden = true;
+
     if (documentInfo) {
       const analysedCount = state.gpxAnalysis.segments.length || documentInfo.parts.length;
       const selectedCount = preferredGpxSegments().length;
       $('previewEyebrow').textContent = state.gpxRoutePrepared ? 'Rijroute klaar' : hasRoute ? 'GPX geselecteerd' : 'GPX geladen';
       $('previewTitle').textContent = documentInfo.fileName || 'GPX-route';
       if (state.gpxRoutePrepared && hasRoute) {
-        const warnings = state.gpxPrepareWarnings?.length ? ` · ${state.gpxPrepareWarnings.length} waarschuwing${state.gpxPrepareWarnings.length === 1 ? '' : 'en'}` : '';
-        $('previewMessage').textContent = `${state.route.coordinates.length.toLocaleString('nl-NL')} routepunten · ${state.gpxPreparedMethod || 'route over het wegennet'}${warnings}.`;
+        const warnings = state.gpxPrepareWarnings?.length ? ` · ${state.gpxPrepareWarnings.length} aandachtspunt${state.gpxPrepareWarnings.length === 1 ? '' : 'en'}` : '';
+        $('previewMessage').textContent = `${state.gpxPreparedMethod || 'GPX-route'}${warnings}. Grijs gestippeld toont de oorspronkelijke GPX.`;
+        const summary = state.route.summary || componentSummary(state.route.components || []);
+        if (breakdown) {
+          breakdown.hidden = false;
+          if ($('matchedRouteDistance')) $('matchedRouteDistance').textContent = fmtDistance(summary.matched || 0);
+          if ($('exactRouteDistance')) $('exactRouteDistance').textContent = fmtDistance(summary.exact || 0);
+          if ($('connectorRouteDistance')) $('connectorRouteDistance').textContent = fmtDistance((summary.connector || 0) + (summary.access || 0));
+          if ($('unresolvedRouteDistance')) $('unresolvedRouteDistance').textContent = fmtDistance(summary.unresolved || 0);
+          if ($('unresolvedRouteKind')) $('unresolvedRouteKind').hidden = !(summary.unresolved > 0);
+        }
       } else if (hasRoute) {
         const selectedIds = selectedGpxSegments().map(segment => String(segment.id)).sort();
         const activeIds = (state.gpxActiveSegmentIds || []).map(id => String(id)).sort();
         const selectionChanged = selectedIds.length !== activeIds.length || selectedIds.some((id, index) => id !== activeIds[index]);
         $('previewMessage').textContent = selectionChanged
           ? `De trajectselectie is gewijzigd. Maak de rijroute opnieuw om ${selectedCount} gekozen traject${selectedCount === 1 ? '' : 'en'} samen te voegen.`
-          : `${state.route.coordinates.length.toLocaleString('nl-NL')} GPX-punten geselecteerd. Kies Maak rijroute om de lijn op wegen te leggen en eventuele gaten te verbinden.`;
+          : `${state.route.coordinates.length.toLocaleString('nl-NL')} GPX-punten geselecteerd. Kies hybride verwerking binnen ${state.gpxHybridToleranceMeters} meter of volg de GPX exact; alleen openingen worden dan verbonden.`;
       } else {
-        $('previewMessage').textContent = `${analysedCount} traject${analysedCount === 1 ? '' : 'en'} gevonden. ${selectedCount} traject${selectedCount === 1 ? '' : 'en'} worden samengevoegd tot één rijroute; pas de selectie zo nodig aan via Analyse.`;
+        $('previewMessage').textContent = `${analysedCount} traject${analysedCount === 1 ? '' : 'en'} gevonden. ${selectedCount} traject${selectedCount === 1 ? '' : 'en'} kunnen hybride of exact worden samengevoegd; pas de selectie zo nodig aan via Analyse.`;
       }
       $('previewDistance').textContent = hasRoute ? fmtDistance(state.route.distance) : fmtDistance(documentInfo.totalDistance);
       $('previewTime').textContent = hasRoute && state.route.time ? fmtDuration(state.route.time) : '-';
@@ -569,13 +643,57 @@
     };
   }
 
+  function routeComponentFeatures(progressKm = 0) {
+    if (!state.route?.components?.length) return [];
+    const progress = Math.max(0, Number(progressKm) || 0);
+    return state.route.components.flatMap((component, index) => {
+      if (!component?.coordinates?.length || component.coordinates.length < 2) return [];
+      const startKm = Number(component.startKm) || 0;
+      const endKm = Number(component.endKm) || startKm;
+      if (progress >= endKm - 0.000001) return [];
+      let coordinates = component.coordinates;
+      if (progress > startKm) {
+        const cumulative = buildCumulativeKm(component.coordinates);
+        coordinates = splitRouteAtKm(component.coordinates, cumulative, progress - startKm).remaining;
+      }
+      if (!coordinates || coordinates.length < 2) return [];
+      return [turf.lineString(coordinates, {
+        kind: component.kind || 'matched',
+        label: component.label || `Deel ${index + 1}`
+      })];
+    });
+  }
+
+  function updateOriginalGpxReference() {
+    const source = map.getSource('gpx-original-reference');
+    if (!source) return;
+    const parts = !state.navigationActive && Array.isArray(state.route?.originalParts) ? state.route.originalParts : [];
+    const features = parts
+      .filter(part => Array.isArray(part.coordinates) && part.coordinates.length >= 2)
+      .map(part => turf.lineString(part.coordinates));
+    source.setData(turf.featureCollection(features));
+  }
+
   function updateRouteProgress(progressKm) {
     if (!state.route || state.route.coordinates.length < 2) return;
     const cumulative = state.route.cumulativeKm || buildCumulativeKm(state.route.coordinates);
     const { traveled, remaining } = splitRouteAtKm(state.route.coordinates, cumulative, progressKm);
     setLineSource('route-casing', state.route.coordinates);
     setLineSource('route-traveled', traveled);
-    setLineSource('route-remaining', remaining);
+    if (state.route.components?.length) {
+      setLineSource('route-remaining', []);
+      map.getSource('route-components')?.setData(turf.featureCollection(routeComponentFeatures(progressKm)));
+    } else {
+      map.getSource('route-components')?.setData(emptyGeoJson());
+      setLineSource('route-remaining', remaining);
+    }
+    updateOriginalGpxReference();
+  }
+
+  function routeComponentAtKm(km) {
+    const components = state.route?.components || [];
+    const value = Math.max(0, Number(km) || 0);
+    return components.find(component => value >= (Number(component.startKm) || 0) - 0.0001 && value <= (Number(component.endKm) || 0) + 0.0001) || null;
   }
 
 
@@ -677,10 +795,20 @@
   function cloneRouteData(route) {
     if (!route) return null;
     return {
+      ...route,
       coordinates: (route.coordinates || []).map(point => [...point]),
       distance: Number(route.distance) || 0,
       time: Number(route.time) || 0,
-      instructions: (route.instructions || []).map(item => ({ ...item, interval: Array.isArray(item.interval) ? [...item.interval] : item.interval }))
+      instructions: (route.instructions || []).map(item => ({ ...item, interval: Array.isArray(item.interval) ? [...item.interval] : item.interval })),
+      components: (route.components || []).map(component => ({
+        ...component,
+        coordinates: (component.coordinates || []).map(point => [...point])
+      })),
+      originalParts: (route.originalParts || []).map(part => ({
+        ...part,
+        coordinates: (part.coordinates || []).map(point => [...point])
+      })),
+      summary: route.summary ? { ...route.summary } : undefined
     };
   }
 
@@ -810,35 +938,18 @@
   }
 
   function orderedGpxSegmentsForJoin(segments) {
-    const remaining = (segments || [])
+    const ordered = (segments || [])
       .filter(segment => Array.isArray(segment.coordinates) && segment.coordinates.length >= 2)
-      .map(cloneGpxSegment)
-      .sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
-    if (!remaining.length) return [];
-
-    const ordered = [remaining.shift()];
-    while (remaining.length) {
-      const currentEnd = ordered[ordered.length - 1].coordinates.at(-1);
-      let bestIndex = 0;
-      let reverse = false;
-      let bestDistance = Infinity;
-      remaining.forEach((segment, index) => {
-        const toStart = turf.distance(turf.point(currentEnd), turf.point(segment.coordinates[0]), { units: 'kilometers' });
-        const toEnd = turf.distance(turf.point(currentEnd), turf.point(segment.coordinates.at(-1)), { units: 'kilometers' });
-        if (toStart < bestDistance) {
-          bestDistance = toStart;
-          bestIndex = index;
-          reverse = false;
-        }
-        if (toEnd < bestDistance) {
-          bestDistance = toEnd;
-          bestIndex = index;
-          reverse = true;
-        }
-      });
-      const next = remaining.splice(bestIndex, 1)[0];
-      if (reverse) next.coordinates.reverse();
-      ordered.push(next);
+      .map(cloneGpxSegment);
+    for (let index = 1; index < ordered.length; index += 1) {
+      const previousEnd = ordered[index - 1].coordinates.at(-1);
+      const next = ordered[index];
+      const toStart = turf.distance(turf.point(previousEnd), turf.point(next.coordinates[0]), { units: 'kilometers' });
+      const toEnd = turf.distance(turf.point(previousEnd), turf.point(next.coordinates.at(-1)), { units: 'kilometers' });
+      if (toEnd + 0.02 < toStart) {
+        next.coordinates.reverse();
+        next.reversedForJoin = !next.reversedForJoin;
+      }
     }
     return ordered;
   }
@@ -868,68 +979,312 @@
     setMarker('destination', clean.at(-1));
   }
 
-  async function routeGpxSegment(segment, index, total) {
-    const coordinates = segment.coordinates.map(point => [...point]);
-    const label = total > 1 ? `Traject ${index + 1}/${total}` : 'GPX op wegen leggen';
-    if (coordinates.length <= 3) {
-      state.gpxPrepareProgress = `${label}…`;
-      renderUi();
-      return { route: await calculateRoute([coordinates[0], coordinates.at(-1)]), method: 'routering via eindpunten' };
+  function estimatedComponentTime(distanceMeters, kind = 'exact') {
+    const speedKmh = state.profile === 'bike'
+      ? (kind === 'exact' ? 17 : 21)
+      : state.profile === 'foot'
+        ? 5
+        : (kind === 'exact' ? 42 : kind === 'connector' ? 55 : 65);
+    return Math.max(0, Number(distanceMeters) || 0) / Math.max(1, speedKmh) * 3600;
+  }
+
+  function normalizedBearingDelta(from, to) {
+    let value = (to - from + 540) % 360 - 180;
+    if (value === -180) value = 180;
+    return value;
+  }
+
+  function geometryInstructions(coordinates, label = 'GPX-spoor') {
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return [];
+    const cumulative = buildCumulativeKm(coordinates);
+    const totalKm = cumulative.at(-1) || 0;
+    const instructions = [{ sign: 0, text: `Volg ${label}`, distance: 0, time: 0, interval: [0, 0] }];
+    let lastInstructionKm = 0;
+    for (let index = 2; index < coordinates.length - 2; index += 1) {
+      const currentKm = cumulative[index] || 0;
+      if (currentKm - lastInstructionKm < 0.09 || totalKm - currentKm < 0.06) continue;
+      const beforeIndex = Math.max(0, routeIndexAtKm(cumulative, Math.max(0, currentKm - 0.045)) - 1);
+      const afterIndex = Math.min(coordinates.length - 1, routeIndexAtKm(cumulative, Math.min(totalKm, currentKm + 0.045)));
+      if (beforeIndex >= index || afterIndex <= index) continue;
+      const incoming = turf.bearing(turf.point(coordinates[beforeIndex]), turf.point(coordinates[index]));
+      const outgoing = turf.bearing(turf.point(coordinates[index]), turf.point(coordinates[afterIndex]));
+      const delta = normalizedBearingDelta(incoming, outgoing);
+      const absolute = Math.abs(delta);
+      if (absolute < 38) continue;
+      const right = delta > 0;
+      let sign;
+      let text;
+      if (absolute < 72) {
+        sign = right ? 1 : -1;
+        text = `Houd ${right ? 'rechts' : 'links'} aan op het GPX-spoor`;
+      } else if (absolute < 135) {
+        sign = right ? 2 : -2;
+        text = `Ga ${right ? 'rechts' : 'links'} op het GPX-spoor`;
+      } else {
+        sign = right ? 3 : -3;
+        text = `Sla scherp ${right ? 'rechts' : 'links'} af op het GPX-spoor`;
+      }
+      instructions.push({ sign, text, distance: 0, time: 0, interval: [index, index] });
+      lastInstructionKm = currentKm;
     }
+    instructions.push({ sign: 4, text: 'Einde van dit GPX-deel', distance: 0, time: 0, interval: [coordinates.length - 1, coordinates.length - 1] });
+    return instructions;
+  }
+
+  function exactRouteComponent(coordinates, options = {}) {
+    const clean = (coordinates || []).map(point => [...point]);
+    const distance = clean.length >= 2 ? turf.length(turf.lineString(clean), { units: 'kilometers' }) * 1000 : 0;
+    return {
+      kind: options.kind || 'exact',
+      label: options.label || 'Exact GPX-deel',
+      coordinates: clean,
+      distance,
+      time: estimatedComponentTime(distance, options.kind || 'exact'),
+      instructions: options.instructions || geometryInstructions(clean, options.label || 'het GPX-spoor'),
+      reason: options.reason || ''
+    };
+  }
+
+  function routeResultComponent(route, kind, label, extra = {}) {
+    return {
+      kind,
+      label,
+      coordinates: (route.coordinates || []).map(point => [...point]),
+      distance: Number(route.distance) || 0,
+      time: Number(route.time) || 0,
+      instructions: (route.instructions || []).map(item => ({ ...item, interval: Array.isArray(item.interval) ? [...item.interval] : item.interval })),
+      ...extra
+    };
+  }
+
+  function componentSummary(components) {
+    const summary = { matched: 0, exact: 0, connector: 0, unresolved: 0, access: 0 };
+    (components || []).forEach(component => {
+      const key = Object.prototype.hasOwnProperty.call(summary, component.kind) ? component.kind : 'exact';
+      summary[key] += Number(component.distance) || (component.coordinates?.length >= 2 ? turf.length(turf.lineString(component.coordinates), { units: 'kilometers' }) * 1000 : 0);
+    });
+    return summary;
+  }
+
+  function composeRouteComponents(components, options = {}) {
+    const cleaned = (components || []).filter(component => component?.coordinates?.length >= 2);
+    const merged = { coordinates: [], distance: 0, time: 0, instructions: [], components: [], originalParts: (options.originalParts || []).map(cloneGpxPart) };
+    cleaned.forEach((component, componentIndex) => {
+      const coordinates = component.coordinates.map(point => [...point]);
+      const hasOverlap = merged.coordinates.length > 0
+        && turf.distance(turf.point(merged.coordinates.at(-1)), turf.point(coordinates[0]), { units: 'meters' }) < 8;
+      const startIndex = merged.coordinates.length - (hasOverlap ? 1 : 0);
+      merged.coordinates.push(...(hasOverlap ? coordinates.slice(1) : coordinates));
+      const endIndex = merged.coordinates.length - 1;
+      const geometryDistance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
+      const distance = Number(component.distance) || geometryDistance;
+      const time = Number(component.time) || estimatedComponentTime(distance, component.kind);
+      const localInstructions = (component.instructions?.length ? component.instructions : geometryInstructions(coordinates, component.kind === 'exact' ? 'het GPX-spoor' : 'de route'));
+      const filteredInstructions = componentIndex < cleaned.length - 1
+        ? localInstructions.filter(item => ![4, 5].includes(Number(item.sign)))
+        : localInstructions;
+      merged.instructions.push(...adjustInstructions(filteredInstructions, Math.max(0, startIndex), 0));
+      merged.distance += distance;
+      merged.time += time;
+      merged.components.push({
+        ...component,
+        coordinates,
+        distance,
+        time,
+        startIndex: Math.max(0, startIndex),
+        endIndex: Math.max(0, endIndex)
+      });
+    });
+    if (merged.coordinates.length < 2) throw new Error('De GPX leverde geen bruikbare route op.');
+    merged.summary = componentSummary(merged.components);
+    return merged;
+  }
+
+  function sampleLineCoordinates(coordinates, maxPoints = 80) {
+    if (!Array.isArray(coordinates) || coordinates.length <= maxPoints) return (coordinates || []).map(point => [...point]);
+    const line = turf.lineString(coordinates);
+    const total = turf.length(line, { units: 'kilometers' });
+    if (!Number.isFinite(total) || total <= 0) return sampleGpxCoordinates(coordinates, maxPoints);
+    const result = [];
+    for (let index = 0; index < maxPoints; index += 1) {
+      result.push(turf.along(line, total * index / (maxPoints - 1), { units: 'kilometers' }).geometry.coordinates);
+    }
+    return result;
+  }
+
+  function percentile(values, ratio = 0.95) {
+    if (!values.length) return Infinity;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.max(0, Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1))];
+  }
+
+  function distancesToLineMeters(coordinates, lineCoordinates, maxSamples = 70) {
+    if (!coordinates?.length || !lineCoordinates?.length) return [];
+    const line = turf.lineString(lineCoordinates);
+    return sampleLineCoordinates(coordinates, maxSamples).map(point => {
+      const snapped = turf.nearestPointOnLine(line, turf.point(point), { units: 'kilometers' });
+      return turf.distance(turf.point(point), snapped, { units: 'meters' });
+    });
+  }
+
+  function assessHybridMatch(originalCoordinates, matchedCoordinates, toleranceMeters) {
+    const originalLine = turf.lineString(originalCoordinates);
+    const matchedLine = turf.lineString(matchedCoordinates);
+    const originalLength = Math.max(0.001, turf.length(originalLine, { units: 'kilometers' }));
+    const matchedLength = Math.max(0.001, turf.length(matchedLine, { units: 'kilometers' }));
+    const originalToMatched = distancesToLineMeters(originalCoordinates, matchedCoordinates);
+    const matchedToOriginal = distancesToLineMeters(matchedCoordinates, originalCoordinates);
+    const startDistance = turf.distance(turf.point(originalCoordinates[0]), turf.point(matchedCoordinates[0]), { units: 'meters' });
+    const endDistance = turf.distance(turf.point(originalCoordinates.at(-1)), turf.point(matchedCoordinates.at(-1)), { units: 'meters' });
+    const p95 = Math.max(percentile(originalToMatched), percentile(matchedToOriginal));
+    const maxDistance = Math.max(...originalToMatched, ...matchedToOriginal);
+    const lengthRatio = matchedLength / originalLength;
+    const accepted = p95 <= toleranceMeters
+      && maxDistance <= toleranceMeters
+      && startDistance <= toleranceMeters
+      && endDistance <= toleranceMeters
+      && lengthRatio >= 0.68
+      && lengthRatio <= 1.48;
+    return { accepted, p95, maxDistance, startDistance, endDistance, lengthRatio };
+  }
+
+  function splitCoordinatesNearHalf(coordinates) {
+    const cumulative = buildCumulativeKm(coordinates);
+    const total = cumulative.at(-1) || 0;
+    let splitIndex = routeIndexAtKm(cumulative, total / 2);
+    splitIndex = Math.max(2, Math.min(coordinates.length - 3, splitIndex));
+    return [coordinates.slice(0, splitIndex + 1), coordinates.slice(splitIndex)];
+  }
+
+  function chunkCoordinatesByDistance(coordinates, maxKm = 18) {
+    if (coordinates.length < 2) return [];
+    const chunks = [];
+    let current = [coordinates[0]];
+    let distance = 0;
+    for (let index = 1; index < coordinates.length; index += 1) {
+      const segmentKm = turf.distance(turf.point(coordinates[index - 1]), turf.point(coordinates[index]), { units: 'kilometers' });
+      if (current.length >= 3 && distance + segmentKm > maxKm) {
+        chunks.push(current);
+        current = [coordinates[index - 1], coordinates[index]];
+        distance = segmentKm;
+      } else {
+        current.push(coordinates[index]);
+        distance += segmentKm;
+      }
+    }
+    if (current.length >= 2) chunks.push(current);
+    return chunks;
+  }
+
+  async function hybridiseGpxWindow(coordinates, toleranceMeters, context, depth = 0) {
+    const geometryKm = turf.length(turf.lineString(coordinates), { units: 'kilometers' });
+    const label = context.label || 'GPX-deel';
     try {
-      return { route: await mapMatchGpx(coordinates, { label }), method: 'kaartmatching' };
-    } catch (matchingError) {
-      console.warn(`${label}: kaartmatching mislukt; probeer route via representatieve punten.`, matchingError);
-      state.gpxPrepareProgress = `${label} · alternatieve berekening…`;
-      renderUi();
-      return { route: await fallbackRouteFromGpx(coordinates), method: 'route via hoofdpunten' };
+      const sampleCount = Math.max(10, Math.min(78, Math.ceil(geometryKm * 7) + 4));
+      const sampled = sampleLineCoordinates(coordinates, sampleCount);
+      const matched = await mapMatchGpxChunkAdaptive(sampled);
+      const assessment = assessHybridMatch(coordinates, matched.coordinates, toleranceMeters);
+      if (assessment.accepted) {
+        return [routeResultComponent(matched, 'matched', `${label} · op weg`, { assessment })];
+      }
+      if (depth < 5 && geometryKm > 0.75 && coordinates.length >= 6) {
+        const [left, right] = splitCoordinatesNearHalf(coordinates);
+        const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
+        const second = await hybridiseGpxWindow(right, toleranceMeters, context, depth + 1);
+        return first.concat(second);
+      }
+      return [exactRouteComponent(coordinates, { label: `${label} · exact behouden`, reason: `Afwijking ${Math.round(assessment.p95)} m` })];
+    } catch (error) {
+      console.debug(`${label}: dit deel blijft exact GPX.`, error);
+      if (depth < 4 && geometryKm > 1.2 && coordinates.length >= 8) {
+        const [left, right] = splitCoordinatesNearHalf(coordinates);
+        const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
+        const second = await hybridiseGpxWindow(right, toleranceMeters, context, depth + 1);
+        return first.concat(second);
+      }
+      return [exactRouteComponent(coordinates, { label: `${label} · exact behouden`, reason: 'Niet betrouwbaar aan een weg te koppelen' })];
     }
   }
 
-  async function buildRouteFromGpxSegments(segments) {
-    ensureKey();
+  async function hybridiseGpxSegment(segment, index, total, toleranceMeters) {
+    const windows = chunkCoordinatesByDistance(segment.coordinates, 18);
+    const components = [];
+    for (let windowIndex = 0; windowIndex < windows.length; windowIndex += 1) {
+      state.gpxPrepareProgress = `Hybride route · traject ${index + 1}/${total}${windows.length > 1 ? ` · deel ${windowIndex + 1}/${windows.length}` : ''}…`;
+      renderUi();
+      const label = segment.name || `Traject ${index + 1}`;
+      components.push(...await hybridiseGpxWindow(windows[windowIndex], toleranceMeters, { label }));
+    }
+    return components;
+  }
+
+  async function connectorComponent(from, to, label, warnings) {
+    const gapMeters = turf.distance(turf.point(from), turf.point(to), { units: 'meters' });
+    if (gapMeters <= 25) return null;
+    if (state.apiKey) {
+      try {
+        const connector = await calculateRoute([from, to]);
+        return routeResultComponent(connector, 'connector', label);
+      } catch (error) {
+        console.warn(`${label} kon niet over de weg worden berekend:`, error);
+        warnings.push(`${label} kon niet automatisch over de weg worden opgelost.`);
+      }
+    } else {
+      warnings.push(`${label} is niet berekend omdat geen GraphHopper API-key is ingesteld.`);
+    }
+    return exactRouteComponent([from, to], { kind: 'unresolved', label: `${label} · controle nodig`, reason: 'Rechte noodverbinding' });
+  }
+
+  async function buildRouteFromGpxSegments(segments, options = {}) {
+    const routeMode = options.routeMode === 'exact' ? 'exact' : 'hybrid';
+    const toleranceMeters = Number(options.toleranceMeters) || 30;
+    if (routeMode === 'hybrid') ensureKey();
     const ordered = orderedGpxSegmentsForJoin(segments);
     if (!ordered.length) throw new Error('Selecteer minimaal één bruikbaar GPX-traject.');
 
-    const routeParts = [];
-    const methods = new Set();
+    const components = [];
     const warnings = [];
     for (let index = 0; index < ordered.length; index += 1) {
-      const prepared = await routeGpxSegment(ordered[index], index, ordered.length);
-      methods.add(prepared.method);
-      if (prepared.method !== 'kaartmatching') {
-        warnings.push(`${ordered[index].name || `Traject ${index + 1}`} is via representatieve routepunten berekend.`);
-      }
+      const segment = ordered[index];
+      const segmentComponents = routeMode === 'hybrid'
+        ? await hybridiseGpxSegment(segment, index, ordered.length, toleranceMeters)
+        : [exactRouteComponent(segment.coordinates, { label: segment.name || `Traject ${index + 1}` })];
 
-      if (routeParts.length) {
-        const previousEnd = routeParts.at(-1).coordinates.at(-1);
-        const nextStart = prepared.route.coordinates[0];
-        const gapMeters = turf.distance(turf.point(previousEnd), turf.point(nextStart), { units: 'kilometers' }) * 1000;
-        if (gapMeters > 25) {
-          state.gpxPrepareProgress = `Verbinding ${index}/${ordered.length - 1} over de weg berekenen…`;
-          renderUi();
-          try {
-            const connector = await calculateRoute([previousEnd, nextStart]);
-            routeParts.push(connector);
-          } catch (connectorError) {
-            const fromLabel = ordered[index - 1].name || `traject ${index}`;
-            const toLabel = ordered[index].name || `traject ${index + 1}`;
-            throw new Error(`De lege ruimte tussen “${fromLabel}” en “${toLabel}” kon niet over het wegennet worden verbonden: ${connectorError.message}`);
-          }
-        }
+      if (components.length && segmentComponents.length) {
+        state.gpxPrepareProgress = `Verbinding ${index}/${ordered.length - 1} berekenen…`;
+        renderUi();
+        const connector = await connectorComponent(
+          components.at(-1).coordinates.at(-1),
+          segmentComponents[0].coordinates[0],
+          `Verbinding tussen traject ${index} en ${index + 1}`,
+          warnings
+        );
+        if (connector) components.push(connector);
       }
-      routeParts.push(prepared.route);
+      components.push(...segmentComponents);
     }
 
-    const route = mergeMatchedRouteParts(routeParts);
-    if (route.coordinates.length < 2) throw new Error('De gekozen GPX-trajecten leverden geen bruikbare rijroute op.');
+    const route = composeRouteComponents(components, { originalParts: ordered });
+    const exactCount = route.components.filter(component => component.kind === 'exact').length;
+    const unresolvedCount = route.components.filter(component => component.kind === 'unresolved').length;
+    if (routeMode === 'hybrid' && exactCount) warnings.push(`${exactCount} deel${exactCount === 1 ? '' : 'en'} exact als GPX behouden omdat wegmatching niet binnen ${toleranceMeters} meter bleef.`);
+    if (unresolvedCount) warnings.push(`${unresolvedCount} verbinding${unresolvedCount === 1 ? '' : 'en'} moet op de kaart worden gecontroleerd.`);
+    route.summary = componentSummary(route.components);
+    const uniqueWarnings = [...new Set(warnings)];
+    const method = routeMode === 'exact'
+      ? `GPX exact · ${ordered.length} traject${ordered.length === 1 ? '' : 'en'}`
+      : `Hybride · maximaal ${toleranceMeters} m afwijking`;
+    route.routeMode = routeMode;
+    route.toleranceMeters = toleranceMeters;
+    route.method = method;
+    route.warnings = uniqueWarnings;
     return {
       route,
       ordered,
-      warnings,
-      method: ordered.length > 1
-        ? `${ordered.length} trajecten samengevoegd (${[...methods].join(' + ')})`
-        : [...methods][0] || 'route over het wegennet'
+      warnings: uniqueWarnings,
+      routeMode,
+      toleranceMeters,
+      method
     };
   }
 
@@ -938,52 +1293,99 @@
     state.gpxRoutePrepared = true;
     state.gpxPreparedMethod = prepared.method;
     state.gpxPrepareWarnings = prepared.warnings || [];
-    state.gpxBaseRoute = cloneRouteData(result);
+    state.gpxRouteMode = prepared.routeMode || state.gpxRouteMode;
+    state.gpxHybridToleranceMeters = Number(prepared.toleranceMeters) || state.gpxHybridToleranceMeters;
     state.gpxActiveSegmentIds = (prepared.ordered || []).map(segment => segment.id).filter(id => id !== undefined);
     initialiseGpxEditorCoordinates(result.coordinates);
     drawRoute(result, 'gpx', { skipOverview: true });
+    state.gpxBaseRoute = cloneRouteData(state.route);
+  }
+
+  function preparationSegments(options = {}) {
+    if (Array.isArray(options.segments)) {
+      return options.segments.filter(segment => segment?.coordinates?.length >= 2).map(cloneGpxSegment);
+    }
+    const useEdited = options.useEdited === true || (state.mode === 'gpx' && gpxEditorHasChanges());
+    if (useEdited && state.gpxEditor.editCoordinates.length >= 2) {
+      return [{
+        id: state.gpxActiveSegmentIds.length === 1 ? state.gpxActiveSegmentIds[0] : 'bewerkt',
+        name: state.gpxEditor.fileName || 'Bewerkte GPX',
+        coordinates: state.gpxEditor.editCoordinates.map(point => [...point])
+      }];
+    }
+    return preferredGpxSegments().map(cloneGpxSegment);
+  }
+
+  function openGpxRouteMode(options = {}) {
+    const segments = preparationSegments(options);
+    if (!segments.length) {
+      status('Selecteer minimaal één GPX-traject.', { error: true });
+      return false;
+    }
+    state.gpxPendingPreparation = {
+      segments,
+      closeAnalysisOnSuccess: options.closeAnalysisOnSuccess === true,
+      closeEditorOnSuccess: options.closeEditorOnSuccess === true,
+      startAfterSuccess: options.startAfterSuccess === true
+    };
+    if ($('gpxHybridTolerance')) $('gpxHybridTolerance').value = String(state.gpxHybridToleranceMeters);
+    if ($('gpxRouteModeSummary')) {
+      $('gpxRouteModeSummary').textContent = `${segments.length} traject${segments.length === 1 ? '' : 'en'} geselecteerd. Bestaande GPX-delen blijven altijd beschikbaar voor controle.`;
+    }
+    if ($('gpxRouteModeSheet')) $('gpxRouteModeSheet').hidden = false;
+    if ($('backdrop')) $('backdrop').hidden = false;
+    return true;
+  }
+
+  function closeGpxRouteMode(options = {}) {
+    if ($('gpxRouteModeSheet')) $('gpxRouteModeSheet').hidden = true;
+    if (options.keepPending !== true) state.gpxPendingPreparation = null;
+    syncBackdrop();
+  }
+
+  async function chooseGpxRouteMode(routeMode) {
+    const pending = state.gpxPendingPreparation;
+    if (!pending) return;
+    state.gpxRouteMode = routeMode === 'exact' ? 'exact' : 'hybrid';
+    const tolerance = Number($('gpxHybridTolerance')?.value);
+    if ([10, 20, 30, 50].includes(tolerance)) state.gpxHybridToleranceMeters = tolerance;
+    persistSettings();
+    closeGpxRouteMode({ keepPending: true });
+    state.gpxPendingPreparation = null;
+    await prepareGpxRoute({ ...pending, routeMode: state.gpxRouteMode, toleranceMeters: state.gpxHybridToleranceMeters });
   }
 
   async function prepareGpxRoute(options = {}) {
     if (state.gpxRoutePreparing) return false;
-    const explicitSegments = Array.isArray(options.segments) ? options.segments.filter(Boolean) : null;
-    const preferredSegments = preferredGpxSegments();
-    const preferredIds = preferredSegments.map(segment => String(segment.id)).sort();
-    const activeIds = (state.gpxActiveSegmentIds || []).map(id => String(id)).sort();
-    const selectionMatchesActive = preferredIds.length === activeIds.length && preferredIds.every((id, index) => id === activeIds[index]);
-    const useActiveEditedRoute = !explicitSegments
-      && state.mode === 'gpx'
-      && state.gpxEditor.editCoordinates.length >= 2
-      && (selectionMatchesActive || !preferredSegments.length);
-    const segments = explicitSegments || (useActiveEditedRoute ? null : preferredSegments);
-
-    if (!useActiveEditedRoute && (!segments || !segments.length)) {
+    const segments = preparationSegments(options);
+    if (!segments.length) {
       status('Selecteer minimaal één GPX-traject.', { error: true });
+      return false;
+    }
+    if (!options.routeMode) {
+      openGpxRouteMode({ ...options, segments });
       return false;
     }
 
     state.gpxRoutePreparing = true;
-    state.gpxPrepareProgress = 'Rijroute voorbereiden…';
+    state.gpxPrepareProgress = options.routeMode === 'exact' ? 'Exacte GPX samenstellen…' : 'Hybride route voorbereiden…';
     ['prepareGpxRoute', 'prepareEditedGpx', 'useSelectedGpxSegment'].forEach(id => {
       const button = $(id);
       if (button) { button.disabled = true; button.classList.add('is-loading'); button.setAttribute('aria-busy', 'true'); }
     });
     renderUi();
     try {
-      let prepared;
-      if (useActiveEditedRoute) {
-        const activeSegment = {
-          id: state.gpxActiveSegmentIds.length === 1 ? state.gpxActiveSegmentIds[0] : 'bewerkt',
-          name: state.gpxEditor.fileName || 'Bewerkte GPX',
-          coordinates: state.gpxEditor.editCoordinates.map(point => [...point])
-        };
-        prepared = await buildRouteFromGpxSegments([activeSegment]);
-      } else {
-        prepared = await buildRouteFromGpxSegments(segments);
-      }
+      const prepared = await buildRouteFromGpxSegments(segments, {
+        routeMode: options.routeMode,
+        toleranceMeters: options.toleranceMeters
+      });
+      state.gpxRouteMode = prepared.routeMode;
+      state.gpxHybridToleranceMeters = prepared.toleranceMeters;
       applyPreparedGpxRoute(prepared);
       if (options.closeAnalysisOnSuccess) closeGpxAnalysis();
+      if (options.closeEditorOnSuccess) closeGpxEditor();
       showOverview();
+      if (options.startAfterSuccess) window.setTimeout(() => startNavigation(), 0);
       return true;
     } catch (error) {
       invalidatePreparedGpx();
@@ -1000,15 +1402,14 @@
     }
   }
 
-  async function prepareSelectedGpxSegments() {
+  function prepareSelectedGpxSegments() {
     const selected = selectedGpxSegments();
     if (!selected.length) return status('Selecteer minimaal één traject om een rijroute te maken.', { error: true });
-    await prepareGpxRoute({ segments: selected, closeAnalysisOnSuccess: true });
+    openGpxRouteMode({ segments: selected, closeAnalysisOnSuccess: true });
   }
 
-  async function prepareEditedGpxRoute() {
-    closeGpxEditor();
-    await prepareGpxRoute();
+  function prepareEditedGpxRoute() {
+    openGpxRouteMode({ useEdited: true, closeEditorOnSuccess: true });
   }
 
   function setMarker(type, point) {
@@ -1080,10 +1481,22 @@
       coordinates,
       distance: Number(data.distance) || turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000,
       time: Number(data.time) || 0,
-      instructions: Array.isArray(data.instructions) ? data.instructions : []
+      instructions: Array.isArray(data.instructions) ? data.instructions.map(item => ({ ...item, interval: Array.isArray(item.interval) ? [...item.interval] : item.interval })) : [],
+      components: (data.components || []).map(component => ({ ...component, coordinates: (component.coordinates || []).map(point => [...point]) })),
+      originalParts: (data.originalParts || []).map(part => ({ ...part, coordinates: (part.coordinates || []).map(point => [...point]) })),
+      summary: data.summary ? { ...data.summary } : undefined
     };
     state.route.cumulativeKm = buildCumulativeKm(coordinates);
     state.route.totalKm = state.route.cumulativeKm[state.route.cumulativeKm.length - 1] || state.route.distance / 1000;
+    state.route.components.forEach(component => {
+      const startIndex = Math.max(0, Math.min(coordinates.length - 1, Number(component.startIndex) || 0));
+      const endIndex = Math.max(startIndex, Math.min(coordinates.length - 1, Number(component.endIndex) || startIndex));
+      component.startIndex = startIndex;
+      component.endIndex = endIndex;
+      component.startKm = state.route.cumulativeKm[startIndex] || 0;
+      component.endKm = state.route.cumulativeKm[endIndex] || component.startKm;
+      component.distance = Number(component.distance) || Math.max(0, (component.endKm - component.startKm) * 1000);
+    });
     state.original = coordinates.map(point => [...point]);
     state.mode = mode;
     state.progressKm = 0;
@@ -1511,10 +1924,62 @@
   function trimRouteFromKm(base, locationKm) {
     const coordinates = base.coordinates || [];
     if (coordinates.length < 2) return cloneRouteData(base);
-    const cumulative = buildCumulativeKm(coordinates);
+    const cumulative = base.cumulativeKm || buildCumulativeKm(coordinates);
     const totalKm = cumulative[cumulative.length - 1] || 0;
     const clampedKm = Math.max(0, Math.min(totalKm, Number(locationKm) || 0));
     if (clampedKm <= 0.00001) return cloneRouteData(base);
+
+    if (base.components?.length) {
+      const clippedComponents = [];
+      let rollingStartKm = 0;
+      base.components.forEach(component => {
+        const localCoordinates = (component.coordinates || []).map(point => [...point]);
+        if (localCoordinates.length < 2) return;
+        const localCumulative = buildCumulativeKm(localCoordinates);
+        const localTotalKm = localCumulative.at(-1) || 0;
+        const componentStartKm = Number.isFinite(Number(component.startKm)) ? Number(component.startKm) : rollingStartKm;
+        const componentEndKm = Number.isFinite(Number(component.endKm)) ? Number(component.endKm) : componentStartKm + localTotalKm;
+        rollingStartKm = componentEndKm;
+        if (componentEndKm <= clampedKm + 0.000001) return;
+
+        let keptCoordinates = localCoordinates;
+        let keptInstructions = (component.instructions || []).map(item => ({ ...item, interval: Array.isArray(item.interval) ? [...item.interval] : item.interval }));
+        let keptFraction = 1;
+        if (clampedKm > componentStartKm + 0.000001) {
+          const localCutKm = Math.max(0, Math.min(localTotalKm, clampedKm - componentStartKm));
+          const nextIndex = Math.max(1, routeIndexAtKm(localCumulative, localCutKm));
+          const previousIndex = nextIndex - 1;
+          keptCoordinates = splitRouteAtKm(localCoordinates, localCumulative, localCutKm).remaining;
+          keptInstructions = adjustInstructions(keptInstructions, 0, previousIndex);
+          keptFraction = localTotalKm > 0 ? Math.max(0, (localTotalKm - localCutKm) / localTotalKm) : 1;
+        }
+        if (keptCoordinates.length < 2) return;
+        const geometryDistance = turf.length(turf.lineString(keptCoordinates), { units: 'kilometers' }) * 1000;
+        clippedComponents.push({
+          ...component,
+          coordinates: keptCoordinates,
+          distance: geometryDistance,
+          time: (Number(component.time) || estimatedComponentTime(Number(component.distance) || localTotalKm * 1000, component.kind)) * keptFraction,
+          instructions: keptInstructions,
+          startIndex: undefined,
+          endIndex: undefined,
+          startKm: undefined,
+          endKm: undefined
+        });
+      });
+      if (clippedComponents.length) {
+        const composed = composeRouteComponents(clippedComponents, { originalParts: base.originalParts || [] });
+        return {
+          ...cloneRouteData(base),
+          ...composed,
+          routeMode: base.routeMode,
+          toleranceMeters: base.toleranceMeters,
+          method: base.method,
+          warnings: Array.isArray(base.warnings) ? [...base.warnings] : undefined
+        };
+      }
+    }
+
     const nextIndex = Math.max(1, routeIndexAtKm(cumulative, clampedKm));
     const previousIndex = nextIndex - 1;
     const segmentStart = cumulative[previousIndex] || 0;
@@ -1526,21 +1991,37 @@
     const remainingCoordinates = [cut, ...coordinates.slice(nextIndex)];
     const remainingFraction = totalKm > 0 ? Math.max(0, (totalKm - clampedKm) / totalKm) : 1;
     return {
+      ...cloneRouteData(base),
       coordinates: remainingCoordinates,
       distance: (Number(base.distance) || totalKm * 1000) * remainingFraction,
       time: (Number(base.time) || 0) * remainingFraction,
-      instructions: adjustInstructions(base.instructions, 0, previousIndex)
+      instructions: adjustInstructions(base.instructions, 0, previousIndex),
+      components: [],
+      summary: undefined
     };
   }
 
   function combineAccessAndGpx(access, remaining) {
     if (!access?.coordinates?.length) return cloneRouteData(remaining);
+    if (remaining?.components?.length) {
+      const accessComponent = routeResultComponent(access, 'access', 'Aanrijroute naar GPX');
+      const composed = composeRouteComponents([accessComponent, ...remaining.components], { originalParts: remaining.originalParts || [] });
+      return {
+        ...cloneRouteData(remaining),
+        ...composed,
+        routeMode: remaining.routeMode,
+        toleranceMeters: remaining.toleranceMeters,
+        method: remaining.method,
+        warnings: Array.isArray(remaining.warnings) ? [...remaining.warnings] : undefined
+      };
+    }
     const accessEnd = access.coordinates.at(-1);
     const gpxStart = remaining.coordinates[0];
     const samePoint = turf.distance(turf.point(accessEnd), turf.point(gpxStart), { units: 'meters' }) < 8;
     const coordinates = access.coordinates.concat(samePoint ? remaining.coordinates.slice(1) : remaining.coordinates);
     const offset = Math.max(0, access.coordinates.length - (samePoint ? 1 : 0));
     return {
+      ...cloneRouteData(remaining),
       coordinates,
       distance: (Number(access.distance) || 0) + (Number(remaining.distance) || 0),
       time: (Number(access.time) || 0) + (Number(remaining.time) || 0),
@@ -1594,8 +2075,8 @@
   async function startNavigation() {
     if (state.gpxDocument) {
       if (!state.gpxRoutePrepared) {
-        const prepared = await prepareGpxRoute();
-        if (!prepared || !state.gpxRoutePrepared) return;
+        openGpxRouteMode({ startAfterSuccess: true });
+        return;
       }
       if (!state.route || state.route.coordinates.length < 2) {
         return status('De GPX kon niet als rijroute worden opgebouwd.', { error: true });
@@ -1679,8 +2160,17 @@
       });
     }
 
-    if ((state.mode === 'address' || state.mode === 'gpx') && offKm > 0.065) state.offCount += 1;
-    else state.offCount = 0;
+    const activeComponent = routeComponentAtKm(state.progressKm);
+    const exactGpxSection = state.mode === 'gpx' && ['exact', 'unresolved'].includes(activeComponent?.kind);
+    if (exactGpxSection) {
+      // Op een exact/offroad GPX-deel blijft het spoor leidend. De app stuurt de rijder
+      // hier niet automatisch terug naar het gewone wegennet.
+      state.offCount = 0;
+    } else if ((state.mode === 'address' || state.mode === 'gpx') && offKm > 0.065) {
+      state.offCount += 1;
+    } else {
+      state.offCount = 0;
+    }
     if (state.offCount >= 3 && !state.simulation.playing) {
       state.offCount = 0;
       smartRejoin(point);
@@ -2117,7 +2607,14 @@
   function syncBackdrop() {
     const backdrop = $('backdrop');
     if (!backdrop) return;
-    const modalOpen = Boolean(($('settingsSheet') && !$('settingsSheet').hidden) || ($('fuelSheet') && !$('fuelSheet').hidden) || ($('gpxStartSheet') && !$('gpxStartSheet').hidden));
+    const modalOpen = Boolean(
+      ($('settingsSheet') && !$('settingsSheet').hidden)
+      || ($('fuelSheet') && !$('fuelSheet').hidden)
+      || ($('gpxStartSheet') && !$('gpxStartSheet').hidden)
+      || ($('gpxRouteModeSheet') && !$('gpxRouteModeSheet').hidden)
+      || (!isDesktop() && $('gpxEditorSheet') && !$('gpxEditorSheet').hidden)
+      || (!isDesktop() && $('gpxAnalysisSheet') && !$('gpxAnalysisSheet').hidden)
+    );
     backdrop.hidden = !modalOpen;
   }
 
@@ -2270,7 +2767,7 @@
     return [...indices]
       .sort((a, b) => a - b)
       .filter(index => coordinates[index])
-      .map(index => turf.point(coordinates[index], { index, selected: selected.has(index) }));
+      .map(index => turf.point(coordinates[index], { index, selected: selected.has(index), role: index === 0 ? 'start' : index === coordinates.length - 1 ? 'end' : 'point' }));
   }
 
 
@@ -2280,12 +2777,15 @@
     if (source) source.setData(turf.featureCollection(gpxPointFeatures()));
     const selected = [...state.gpxEditor.selectedIndices].sort((a, b) => a - b);
     const count = selected.length;
-    const last = state.gpxEditor.editCoordinates.length - 1;
+    const pointCount = state.gpxEditor.editCoordinates.length;
+    const last = pointCount - 1;
+    const removable = selected.filter(index => index >= 0 && index < last);
     if ($('gpxSelectionCount')) $('gpxSelectionCount').textContent = count ? `${count} punt${count === 1 ? '' : 'en'} geselecteerd` : 'Geen punten geselecteerd';
-    if ($('deleteSelectedGpx')) $('deleteSelectedGpx').disabled = count === 0 || selected.every(index => index === 0 || index === last);
+    if ($('deleteSelectedGpx')) $('deleteSelectedGpx').disabled = removable.length === 0 || pointCount - removable.length < 2;
     if ($('clearGpxPointSelection')) $('clearGpxPointSelection').disabled = count === 0;
-    if ($('moveGpxPointUp')) $('moveGpxPointUp').disabled = count === 0 || selected.some(index => index <= 1 || index >= last);
-    if ($('moveGpxPointDown')) $('moveGpxPointDown').disabled = count === 0 || selected.some(index => index <= 0 || index >= last - 1);
+    if ($('moveGpxPointUp')) $('moveGpxPointUp').disabled = count === 0 || selected.some(index => index <= 0 || index >= last || index - 1 >= last);
+    if ($('moveGpxPointDown')) $('moveGpxPointDown').disabled = count === 0 || selected.some(index => index < 0 || index >= last - 1 || index + 1 >= last);
+    if ($('setGpxStartPoint')) $('setGpxStartPoint').disabled = count !== 1 || selected[0] === 0 || selected[0] === last;
     if ($('undoGpx')) $('undoGpx').disabled = !Array.isArray(state.gpxEditor.history) || state.gpxEditor.history.length === 0;
   }
 
@@ -2329,7 +2829,7 @@
     removeSelectedMarker();
     if (state.gpxEditor.selectedIndices.size === 1) {
       const index = [...state.gpxEditor.selectedIndices][0];
-      const marker = new maplibregl.Marker({ draggable: index !== 0 && index !== state.gpxEditor.editCoordinates.length - 1, color: '#dc2626' })
+      const marker = new maplibregl.Marker({ draggable: true, color: '#dc2626' })
         .setLngLat(state.gpxEditor.editCoordinates[index])
         .addTo(map);
       marker.on('dragstart', pushGpxHistory);
@@ -2370,7 +2870,7 @@
       up.className = 'gpx-point-move';
       up.textContent = '↑';
       up.title = 'Punt eerder in de route';
-      up.disabled = index <= 1 || index >= points.length - 1;
+      up.disabled = index <= 0 || index >= points.length - 1;
       up.addEventListener('click', event => {
         event.stopPropagation();
         selectGpxIndices([index]);
@@ -2380,22 +2880,32 @@
       down.className = 'gpx-point-move';
       down.textContent = '↓';
       down.title = 'Punt later in de route';
-      down.disabled = index <= 0 || index >= points.length - 2;
+      down.disabled = index >= points.length - 2;
       down.addEventListener('click', event => {
         event.stopPropagation();
         selectGpxIndices([index]);
         moveSelectedGpxPoint(1);
       });
+      const makeStart = document.createElement('button');
+      makeStart.className = 'gpx-point-start';
+      makeStart.textContent = '⚑';
+      makeStart.title = index === 0 ? 'Dit is het startpunt' : 'Maak dit punt het startpunt';
+      makeStart.disabled = index === 0 || index === points.length - 1;
+      makeStart.addEventListener('click', event => {
+        event.stopPropagation();
+        selectGpxIndices([index]);
+        setSelectedAsGpxStart();
+      });
       const remove = document.createElement('button');
       remove.className = 'gpx-point-remove';
       remove.textContent = '×';
-      remove.title = 'Verwijder punt';
-      remove.disabled = index === 0 || index === points.length - 1;
+      remove.title = index === 0 ? 'Verwijder huidig startpunt' : 'Verwijder punt';
+      remove.disabled = index === points.length - 1 || points.length <= 2;
       remove.addEventListener('click', event => {
         event.stopPropagation();
         deleteGpxIndices([index]);
       });
-      actions.append(up, down, remove);
+      actions.append(up, down, makeStart, remove);
       row.addEventListener('click', () => {
         toggleGpxIndex(index);
         map.easeTo({ center: point, zoom: Math.max(map.getZoom(), 15), duration: 350 });
@@ -2405,10 +2915,22 @@
     });
   }
 
+  function syncGpxEditorEndpoints() {
+    const coordinates = state.gpxEditor.editCoordinates;
+    if (!coordinates.length) return;
+    state.startPoint = [...coordinates[0]];
+    state.destinationPoint = [...coordinates.at(-1)];
+    state.startLabel = 'Start GPX';
+    state.destinationLabel = 'Einde GPX';
+    setMarker('start', state.startPoint);
+    setMarker('destination', state.destinationPoint);
+  }
+
   function drawEditedGpx() {
     invalidatePreparedGpx();
     const coordinates = state.gpxEditor.editCoordinates;
     if (coordinates.length < 2) return;
+    syncGpxEditorEndpoints();
     const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
     drawRoute({ coordinates: coordinates.map(point => [...point]), distance, time: 0, instructions: [] }, 'gpx', { skipOverview: true });
     updateGpxPointLayer();
@@ -2454,7 +2976,7 @@
     if (!selected.size || ![-1, 1].includes(delta)) return;
     const last = state.gpxEditor.editCoordinates.length - 1;
     const ordered = [...selected].sort((a, b) => delta < 0 ? a - b : b - a);
-    if (ordered.some(index => index <= 0 || index >= last || index + delta <= 0 || index + delta >= last)) return;
+    if (ordered.some(index => index < 0 || index >= last || index + delta < 0 || index + delta >= last)) return;
     pushGpxHistory();
     ordered.forEach(index => {
       const target = index + delta;
@@ -2523,17 +3045,62 @@
     showOverview();
   }
 
+  function setSelectedAsGpxStart() {
+    const selected = [...state.gpxEditor.selectedIndices];
+    if (selected.length !== 1) return status('Selecteer precies één punt als nieuw startpunt.', { error: true });
+    const index = selected[0];
+    const coordinates = state.gpxEditor.editCoordinates;
+    const last = coordinates.length - 1;
+    if (index === 0) return status('Dit punt is al het startpunt.');
+    if (index <= 0 || index >= last) return status('Kies een routepunt vóór het eindpunt.', { error: true });
+
+    const totalMeters = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
+    const closureDistance = turf.distance(turf.point(coordinates[0]), turf.point(coordinates.at(-1)), { units: 'meters' });
+    const isClosedRoute = closureDistance <= Math.max(75, Math.min(250, totalMeters * 0.002));
+    pushGpxHistory();
+
+    if (isClosedRoute) {
+      const duplicateClosure = closureDistance <= 50;
+      const core = duplicateClosure ? coordinates.slice(0, -1) : coordinates.slice();
+      const safeIndex = Math.min(index, core.length - 1);
+      const rotated = core.slice(safeIndex).concat(core.slice(0, safeIndex));
+      if (rotated.length < 2) return status('Dit punt kan niet als startpunt worden gebruikt.', { error: true });
+      state.gpxEditor.editCoordinates = duplicateClosure ? rotated.concat([[...rotated[0]]]) : rotated;
+    } else {
+      const confirmed = window.confirm('Dit is geen gesloten rondrit. Alle punten vóór het gekozen startpunt worden verwijderd. Doorgaan?');
+      if (!confirmed) {
+        state.gpxEditor.history.pop();
+        return;
+      }
+      state.gpxEditor.editCoordinates = coordinates.slice(index).map(point => [...point]);
+    }
+
+    state.gpxEditor.selectedIndices = new Set([0]);
+    removeSelectedMarker();
+    invalidatePreparedGpx();
+    drawEditedGpx();
+    selectGpxIndices([0]);
+    renderGpxEditorList();
+    showOverview();
+    status('Nieuw GPX-startpunt ingesteld.');
+  }
+
   function deleteGpxIndices(indices) {
-    const last = state.gpxEditor.editCoordinates.length - 1;
-    const removable = [...new Set(indices)].filter(index => index > 0 && index < last).sort((a,b) => b-a);
-    if (!removable.length) return status('Het start- en eindpunt blijven altijd behouden.', { error: true });
+    const pointCount = state.gpxEditor.editCoordinates.length;
+    const last = pointCount - 1;
+    const removable = [...new Set(indices)].filter(index => index >= 0 && index < last).sort((a,b) => b-a);
+    if (!removable.length) return status('Het eindpunt blijft behouden; selecteer een ander punt om te verwijderen.', { error: true });
+    if (pointCount - removable.length < 2) return status('Een GPX moet minimaal een start- en eindpunt behouden.', { error: true });
+    const removedStart = removable.includes(0);
     pushGpxHistory();
     removable.forEach(index => state.gpxEditor.editCoordinates.splice(index, 1));
     state.gpxEditor.selectedIndices.clear();
     removeSelectedMarker();
     drawEditedGpx();
     renderGpxEditorList();
-    status(`${removable.length} routepunt${removable.length === 1 ? '' : 'en'} verwijderd.`);
+    status(removedStart
+      ? `${removable.length} punt${removable.length === 1 ? '' : 'en'} verwijderd. Het eerstvolgende punt is nu het startpunt.`
+      : `${removable.length} routepunt${removable.length === 1 ? '' : 'en'} verwijderd.`);
   }
 
   function deleteSelectedGpx() {
@@ -3336,6 +3903,8 @@
     state.gpxStartStrategy = null;
     state.gpxStartWaiting = false;
     state.gpxAppendMode = false;
+    state.gpxPendingPreparation = null;
+    state.gpxStartAfterPrepare = false;
 
     state.gpxEditor.boxElement?.remove();
     removeSelectedMarker();
@@ -3345,11 +3914,12 @@
     state.gpxAnalysis = { sourceParts: [], segments: [], active: false, intent: null, selectedIds: new Set(), jumpThresholdMeters: threshold };
     state.gpxDocument = null;
 
-    ['gpxEditorSheet','gpxAnalysisSheet','gpxStartSheet','fuelSheet','settingsSheet'].forEach(id => { if ($(id)) $(id).hidden = true; });
+    ['gpxEditorSheet','gpxAnalysisSheet','gpxRouteModeSheet','gpxStartSheet','fuelSheet','settingsSheet'].forEach(id => { if ($(id)) $(id).hidden = true; });
     if ($('backdrop')) $('backdrop').hidden = true;
     map.getSource('gpx-analysis')?.setData(emptyGeoJson());
     map.getSource('gpx-edit-points')?.setData(emptyGeoJson());
     clearGpxPreview();
+    clearRouteComponentLayers();
     ['route-casing','route-traveled','route-remaining','rejoin-casing','rejoin-route'].forEach(id => setLineSource(id, []));
 
     if (state.destinationMarker) { state.destinationMarker.remove(); state.destinationMarker = null; }
@@ -3483,7 +4053,7 @@
   bind('planRoute', 'click', planRoute);
   bind('replaceGpx', 'click', chooseGpxMode);
   bind('appendGpx', 'click', appendGpxMode);
-  bind('prepareGpxRoute', 'click', prepareGpxRoute);
+  bind('prepareGpxRoute', 'click', () => openGpxRouteMode());
   bind('reverseGpx', 'click', reverseGpxRoute);
   bind('gpxFile', 'change', loadGpx);
   bind('editGpx', 'click', openGpxEditor);
@@ -3501,6 +4071,7 @@
   bind('restoreGpx', 'click', restoreGpx);
   bind('exportGpx', 'click', exportGpx);
   bind('prepareEditedGpx', 'click', prepareEditedGpxRoute);
+  bind('setGpxStartPoint', 'click', setSelectedAsGpxStart);
   bind('addGpxPoint', 'click', () => setAddGpxPointMode(!state.gpxEditor.addMode));
   bind('boxSelectGpx', 'click', () => setBoxSelectMode(!state.gpxEditor.boxMode));
   bind('deleteSelectedGpx', 'click', deleteSelectedGpx);
@@ -3514,6 +4085,9 @@
   bind('fuel', 'click', addNearestFuelStop);
   bind('layoutToggle', 'click', toggleLayoutMode);
   bind('closeFuelSheet', 'click', closeFuelSheet);
+  bind('closeGpxRouteMode', 'click', closeGpxRouteMode);
+  bind('chooseHybridGpxRoute', 'click', () => chooseGpxRouteMode('hybrid'));
+  bind('chooseExactGpxRoute', 'click', () => chooseGpxRouteMode('exact'));
   bind('closeGpxStartSheet', 'click', closeGpxStartSheet);
   bind('gpxRetryGps', 'click', retryGpxGps);
   bind('gpxNavigateToStart', 'click', () => startGpxWithStrategy('start').catch(error => {
@@ -3532,7 +4106,7 @@
   bind('simSpeed', 'change', event => { state.simulation.speedFactor = Number(event.target.value); });
   bind('settings', 'click', openSettings);
   bind('closeSettings', 'click', closeSettings);
-  bind('backdrop', 'click', () => { closeSettings(); closeFuelSheet(); closeGpxStartSheet(); closeGpxEditor(); closeGpxAnalysis(); });
+  bind('backdrop', 'click', () => { closeSettings(); closeFuelSheet(); closeGpxRouteMode(); closeGpxStartSheet(); closeGpxEditor(); closeGpxAnalysis(); });
   bind('saveSettings', 'click', saveSettings);
   document.querySelectorAll('.avatar-choice').forEach(button => button.addEventListener('click', () => chooseAvatar(button.dataset.avatar)));
   bind('uploadAvatarButton', 'click', () => $('avatarFile')?.click());
