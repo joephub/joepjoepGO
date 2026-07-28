@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #111827;
@@ -247,3 +248,13 @@ button { cursor: pointer; }
 @media (max-width: 740px) {
   .navigation-active.layout-landscape .app { grid-template-columns: minmax(0,1fr) min(285px, 38vw); }
 }
+
+/* v12: rustige beginstand */
+body:not(.route-ready) .bottom-panel { max-width: 520px; }
+body:not(.route-ready) .controls { grid-template-columns: repeat(3, 1fr); }
+body:not(.route-ready) #overview,
+body:not(.route-ready) #clear { display: none; }
+body.route-ready:not(.navigation-active) #routeSummary { display: grid !important; }
+body.navigation-active #routeSummary { display: grid !important; }
+body:not(.navigation-active) .route-actions,
+body:not(.navigation-active) .layout-toggle { display: none !important; }

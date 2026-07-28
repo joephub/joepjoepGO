@@ -9,6 +9,8 @@
     apiKey: saved.apiKey || '',
     profile: saved.profile || 'car',
     autoFollow: saved.autoFollow !== false,
+    keepAwake: saved.keepAwake !== false,
+    wakeLock: null,
     startMode: 'gps',
     startPoint: null,
     startLabel: 'Mijn locatie',
@@ -47,6 +49,32 @@
     const minutes = Math.max(1, Math.round(ms / 60000));
     return minutes >= 60 ? `${Math.floor(minutes / 60)} u ${minutes % 60} min` : `${minutes} min`;
   };
+
+  async function requestWakeLock() {
+    if (!state.keepAwake || !state.navigationActive || document.visibilityState !== 'visible') return;
+    if (!('wakeLock' in navigator)) {
+      console.warn('Screen Wake Lock wordt niet ondersteund door deze browser.');
+      return;
+    }
+    try {
+      if (state.wakeLock && !state.wakeLock.released) return;
+      state.wakeLock = await navigator.wakeLock.request('screen');
+      state.wakeLock.addEventListener('release', () => { state.wakeLock = null; });
+    } catch (error) {
+      console.warn('Scherm wakker houden is niet gelukt:', error);
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (state.wakeLock && !state.wakeLock.released) await state.wakeLock.release();
+    } catch (_) {}
+    state.wakeLock = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.navigationActive) requestWakeLock();
+  });
 
   const map = new maplibregl.Map({
     container: 'map',
@@ -179,6 +207,7 @@
   function drawRoute(data, mode) {
     stopSimulationTimer();
     state.route = data;
+    document.body.classList.add('route-ready');
     state.original = data.coordinates.slice();
     state.mode = mode;
     state.progressKm = 0;
@@ -352,7 +381,7 @@
       },
       { enableHighAccuracy: true, maximumAge: 1500, timeout: 15000 }
     );
-    navigator.wakeLock?.request('screen').catch(() => {});
+
   }
 
   function updateNavigation(point, speedMps, heading) {
@@ -509,7 +538,7 @@
 
   function toggleLayoutMode() {
     state.layoutMode = state.layoutMode === 'portrait' ? 'landscape' : 'portrait';
-    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, layoutMode: state.layoutMode }));
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, keepAwake: state.keepAwake, layoutMode: state.layoutMode }));
     applyLayoutMode();
   }
 
@@ -520,8 +549,12 @@
     if (active) {
       $('developerPanel').hidden = true;
       $('routeActions').hidden = false;
+      $('layoutToggle').hidden = false;
+      requestWakeLock();
     } else {
       $('routeActions').hidden = true;
+      $('layoutToggle').hidden = true;
+      releaseWakeLock();
     }
     requestAnimationFrame(() => map.resize());
   }
@@ -689,6 +722,8 @@
   function clearRoute() {
     pauseSimulation();
     state.route = null;
+    document.body.classList.remove('route-ready');
+    setNavigationMode(false);
     state.original = [];
     state.destinationPoint = null;
     state.mode = 'idle';
@@ -712,20 +747,22 @@
     }
   }
 
-  function openSettings() { $('apiKey').value = state.apiKey; $('vehicleProfile').value = state.profile; $('autoFollow').checked = state.autoFollow; $('settingsSheet').hidden = false; $('backdrop').hidden = false; }
+  function openSettings() { $('apiKey').value = state.apiKey; $('vehicleProfile').value = state.profile; $('autoFollow').checked = state.autoFollow; $('keepAwake').checked = state.keepAwake; $('settingsSheet').hidden = false; $('backdrop').hidden = false; }
   function closeSettings() { $('settingsSheet').hidden = true; $('backdrop').hidden = true; }
   function saveSettings() {
     state.apiKey = $('apiKey').value.trim();
     state.profile = $('vehicleProfile').value;
     state.autoFollow = $('autoFollow').checked;
-    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, layoutMode: state.layoutMode }));
+    state.keepAwake = $('keepAwake').checked;
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, keepAwake: state.keepAwake, layoutMode: state.layoutMode }));
+    if (state.navigationActive) { if (state.keepAwake) requestWakeLock(); else releaseWakeLock(); }
     closeSettings();
     status('Instellingen opgeslagen');
   }
 
   function bind(id, eventName, handler) {
     const element = $(id);
-    if (!element) { console.warn(`RouteRijder v11: element #${id} ontbreekt`); return; }
+    if (!element) { console.warn(`RouteRijder v12: element #${id} ontbreekt`); return; }
     element.addEventListener(eventName, handler);
   }
 
@@ -757,7 +794,7 @@
   bind('startQuery', 'keydown', async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message); } } });
 
   applyLayoutMode();
-  $('apiKey').value = state.apiKey;
+  if ($('apiKey')) $('apiKey').value = state.apiKey;
   $('vehicleProfile').value = state.profile;
   $('autoFollow').checked = state.autoFollow;
 })();
