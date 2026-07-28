@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.0.0/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>RouteRijder</title>
+</head>
+<body>
+<div class="app">
+  <div id="map" class="map"></div>
+  <div class="topbar">
+    <div class="searchbox"><input id="query" placeholder="Waar wil je naartoe?" /><button id="search" class="icon-button search-action">→</button></div>
+    <button id="settings" class="icon-button">⚙</button>
+  </div>
+  <div id="results" class="results" hidden></div>
+  <div id="status" class="status">Klaar om te rijden</div>
+  <div class="bottom-panel">
+    <div class="instruction"><strong id="instruction">Geen actieve route</strong><small id="mode">RouteRijder</small></div>
+    <div class="controls">
+      <button id="gps" class="primary-button">Start GPS</button>
+      <button id="gpx" class="primary-button">Laad GPX</button>
+      <button id="clear" class="primary-button">Wis route</button>
+    </div>
+  </div>
+  <input id="file" class="hidden-file" type="file" accept=".gpx,application/gpx+xml" />
+  <div id="backdrop" class="sheet-backdrop" hidden></div>
+  <div id="sheet" class="sheet" hidden>
+    <h2>Instellingen</h2>
+    <label>GraphHopper API-key</label>
+    <input id="apiKey" type="password" placeholder="Plak hier je API-key" />
+    <p>De sleutel wordt alleen lokaal in deze browser opgeslagen. Voor een publiek gebruikte app hoort de API via een beveiligde proxy te lopen.</p>
+    <p>De proefversie gebruikt openbare OpenStreetMap-kaarttegels. Kies voor intensief gebruik een eigen tileprovider.</p>
+    <button id="saveSettings" class="primary-button active">Opslaan</button>
+  </div>
+</div>
+<script type="module" src="./app.js"></script>
+<script>if('serviceWorker' in navigator){addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));}</script>
+</body>
+</html>

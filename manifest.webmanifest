@@ -1,0 +1,12 @@
+{
+  "name": "RouteRijder",
+  "short_name": "RouteRijder",
+  "description": "GPS-navigatie met adresroutes en GPX-routes.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#111827",
+  "background_color": "#111827",
+  "icons": [{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
