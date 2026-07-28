@@ -650,30 +650,36 @@
     status('Instellingen opgeslagen');
   }
 
-  $('startMode').onclick = toggleStartMode;
-  $('useMapStart').onclick = requestMapStart;
-  $('useMapDestination').onclick = () => requestMapPoint('destination');
-  $('planRoute').onclick = planRoute;
-  $('gps').onclick = toggleGps;
-  $('gpx').onclick = () => $('gpxFile').click();
-  $('gpxFile').onchange = loadGpx;
-  $('overview').onclick = showOverview;
-  $('clear').onclick = clearRoute;
-  $('fuel').onclick = addNearestFuelStop;
-  $('stopNavigation').onclick = stopNavigation;
-  $('developer').onclick = () => { $('developerPanel').hidden = !$('developerPanel').hidden; };
-  $('closeDeveloper').onclick = () => { $('developerPanel').hidden = true; };
-  $('simPlay').onclick = toggleSimulation;
-  $('simReset').onclick = resetSimulation;
-  $('simSpeed').onchange = event => { state.simulation.speedFactor = Number(event.target.value); };
-  $('settings').onclick = openSettings;
-  $('closeSettings').onclick = closeSettings;
-  $('backdrop').onclick = closeSettings;
-  $('saveSettings').onclick = saveSettings;
-  $('destinationQuery').oninput = () => { state.destinationPoint = null; };
-  $('startQuery').oninput = () => { state.startPoint = null; };
-  $('destinationQuery').onkeydown = async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message); } } };
-  $('startQuery').onkeydown = async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message); } } };
+  function bind(id, eventName, handler) {
+    const element = $(id);
+    if (!element) { console.warn(`RouteRijder v10: element #${id} ontbreekt`); return; }
+    element.addEventListener(eventName, handler);
+  }
+
+  bind('startMode', 'click', toggleStartMode);
+  bind('useMapStart', 'click', requestMapStart);
+  bind('useMapDestination', 'click', () => requestMapPoint('destination'));
+  bind('planRoute', 'click', planRoute);
+  bind('gps', 'click', toggleGps);
+  bind('gpx', 'click', () => $('gpxFile')?.click());
+  bind('gpxFile', 'change', loadGpx);
+  bind('overview', 'click', showOverview);
+  bind('clear', 'click', clearRoute);
+  bind('fuel', 'click', addNearestFuelStop);
+  bind('stopNavigation', 'click', stopNavigation);
+  bind('developer', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = !panel.hidden; });
+  bind('closeDeveloper', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = true; });
+  bind('simPlay', 'click', toggleSimulation);
+  bind('simReset', 'click', resetSimulation);
+  bind('simSpeed', 'change', event => { state.simulation.speedFactor = Number(event.target.value); });
+  bind('settings', 'click', openSettings);
+  bind('closeSettings', 'click', closeSettings);
+  bind('backdrop', 'click', closeSettings);
+  bind('saveSettings', 'click', saveSettings);
+  bind('destinationQuery', 'input', () => { state.destinationPoint = null; });
+  bind('startQuery', 'input', () => { state.startPoint = null; });
+  bind('destinationQuery', 'keydown', async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message); } } });
+  bind('startQuery', 'keydown', async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message); } } });
 
   $('apiKey').value = state.apiKey;
   $('vehicleProfile').value = state.profile;
