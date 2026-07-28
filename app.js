@@ -31,7 +31,9 @@
     simulation: { timer: null, playing: false, distanceKm: 0, speedFactor: 5, lastTime: 0 },
     progressKm: 0,
     offCount: 0,
-    lastReroute: 0
+    lastReroute: 0,
+    layoutMode: saved.layoutMode || (window.matchMedia('(orientation: landscape)').matches ? 'landscape' : 'portrait'),
+    fuelCandidates: []
   };
 
   if (!window.maplibregl || !window.turf) {
@@ -39,7 +41,7 @@
     return;
   }
 
-  const status = (text) => { $('status').textContent = text; };
+  const status = (text) => { if ($('status')) $('status').textContent = text; };
   const fmtDistance = (m) => m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.max(10, Math.round(m / 10) * 10)} m`;
   const fmtDuration = (ms) => {
     const minutes = Math.max(1, Math.round(ms / 60000));
@@ -380,7 +382,7 @@
     if (state.autoFollow && (state.follow || speedMps > 1.2 || state.simulation.playing)) {
       state.follow = true;
       const derivedHeading = Number.isFinite(heading) ? heading : bearingAlongRoute(line, location);
-      map.easeTo({ center: point, zoom: 15.8, pitch: 55, bearing: derivedHeading, offset: [0, 210], padding: { top: 20, bottom: 20, left: 20, right: 20 }, duration: 350 });
+      map.easeTo({ center: point, zoom: 15.8, pitch: 55, bearing: derivedHeading, offset: state.layoutMode === 'landscape' ? [-40, 160] : [0, 175], padding: { top: 18, bottom: 18, left: 18, right: 18 }, duration: 350 });
     }
 
     if ((state.mode === 'address' || state.mode === 'gpx') && offKm > 0.065) state.offCount += 1;
@@ -494,13 +496,68 @@
     finally { event.target.value = ''; }
   }
 
+  function applyLayoutMode() {
+    document.body.classList.toggle('layout-portrait', state.layoutMode === 'portrait');
+    document.body.classList.toggle('layout-landscape', state.layoutMode === 'landscape');
+    const button = $('layoutToggle');
+    if (button) {
+      button.textContent = state.layoutMode === 'portrait' ? '▯' : '▭';
+      button.title = state.layoutMode === 'portrait' ? 'Zet informatie rechts' : 'Zet informatie onder';
+    }
+    requestAnimationFrame(() => map.resize());
+  }
+
+  function toggleLayoutMode() {
+    state.layoutMode = state.layoutMode === 'portrait' ? 'landscape' : 'portrait';
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, layoutMode: state.layoutMode }));
+    applyLayoutMode();
+  }
+
   function setNavigationMode(active) {
     state.navigationActive = active;
     document.body.classList.toggle('navigation-active', active);
+    applyLayoutMode();
     if (active) {
       $('developerPanel').hidden = true;
       $('routeActions').hidden = false;
+    } else {
+      $('routeActions').hidden = true;
     }
+    requestAnimationFrame(() => map.resize());
+  }
+
+  function closeFuelSheet() {
+    const sheet = $('fuelSheet');
+    if (sheet) sheet.hidden = true;
+    if ($('backdrop') && $('settingsSheet')?.hidden) $('backdrop').hidden = true;
+  }
+
+  function renderFuelChoices(candidates) {
+    const box = $('fuelChoices');
+    box.innerHTML = '';
+    candidates.slice(0, 3).forEach((station, index) => {
+      const button = document.createElement('button');
+      button.className = 'fuel-choice';
+      const routeAhead = Math.max(0, station.ahead - state.progressKm);
+      button.innerHTML = `<strong>${index + 1}. ${station.name}</strong><span>${routeAhead.toFixed(1)} km verder op de route · ${Math.round(station.side * 1000)} m ernaast</span><span class="fuel-add">Toevoegen ›</span>`;
+      button.addEventListener('click', () => chooseFuelStop(station));
+      box.appendChild(button);
+    });
+  }
+
+  async function chooseFuelStop(station) {
+    try {
+      closeFuelSheet();
+      status(`${station.name} als tussenstop toevoegen…`);
+      const destination = state.destinationPoint || state.route.coordinates[state.route.coordinates.length - 1];
+      const dataRoute = await calculateRoute([state.current, station.point, destination]);
+      state.fuelStop = station;
+      setMarker('destination', destination);
+      drawRoute(dataRoute, 'address');
+      setNavigationMode(true);
+      state.follow = true;
+      status(`${station.name} is als tussenstop toegevoegd.`);
+    } catch (error) { status(error.message); }
   }
 
   async function addNearestFuelStop() {
@@ -509,30 +566,46 @@
       status('Tankstations langs de komende route zoeken…');
       const line = turf.lineString(state.route.coordinates);
       const total = turf.length(line, { units: 'kilometers' });
-      const probeKm = Math.min(total, state.progressKm + 18);
-      const probe = turf.along(line, probeKm, { units: 'kilometers' }).geometry.coordinates;
-      const query = `[out:json][timeout:20];(node[\"amenity\"=\"fuel\"](around:12000,${probe[1]},${probe[0]});way[\"amenity\"=\"fuel\"](around:12000,${probe[1]},${probe[0]}););out center tags;`;
-      const response = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
-      if (!response.ok) throw new Error('Tankstations zoeken is tijdelijk niet beschikbaar.');
-      const data = await response.json();
-      const candidates = (data.elements || []).map(item => {
+      const searchStart = Math.min(total, state.progressKm + 0.5);
+      const searchEnd = Math.min(total, state.progressKm + 30);
+      const sampleDistances = [];
+      for (let km = searchStart; km <= searchEnd; km += 6) sampleDistances.push(km);
+      if (!sampleDistances.length) sampleDistances.push(searchStart);
+      const aroundParts = sampleDistances.map(km => {
+        const p = turf.along(line, km, { units: 'kilometers' }).geometry.coordinates;
+        return `node["amenity"="fuel"](around:6500,${p[1]},${p[0]});way["amenity"="fuel"](around:6500,${p[1]},${p[0]});`;
+      }).join('');
+      const query = `[out:json][timeout:25];(${aroundParts});out center tags;`;
+      const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+      let data = null;
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: `data=${encodeURIComponent(query)}` });
+          if (response.ok) { data = await response.json(); break; }
+        } catch (_) {}
+      }
+      if (!data) throw new Error('Tankstations zoeken is tijdelijk niet beschikbaar.');
+      const dedupe = new Map();
+      (data.elements || []).forEach(item => {
         const point = item.type === 'node' ? [item.lon, item.lat] : [item.center?.lon, item.center?.lat];
-        return { point, name: item.tags?.name || item.tags?.brand || 'Tankstation' };
-      }).filter(item => item.point.every(Number.isFinite)).map(item => {
+        if (!point || !point.every(Number.isFinite)) return;
+        const key = `${point[0].toFixed(5)},${point[1].toFixed(5)}`;
+        dedupe.set(key, { point, name: item.tags?.name || item.tags?.brand || 'Tankstation' });
+      });
+      const candidates = [...dedupe.values()].map(item => {
         const snap = turf.nearestPointOnLine(line, turf.point(item.point), { units: 'kilometers' });
         const ahead = Number(snap.properties.location || 0);
         const side = turf.distance(turf.point(item.point), snap, { units: 'kilometers' });
-        return { ...item, ahead, score: side * 8 + Math.abs(ahead - probeKm) };
-      }).filter(item => item.ahead > state.progressKm + .3).sort((a,b) => a.score - b.score);
-      if (!candidates[0]) throw new Error('Geen tankstation langs het komende deel van de route gevonden.');
-      const station = candidates[0];
-      const destination = state.destinationPoint || state.route.coordinates[state.route.coordinates.length - 1];
-      const dataRoute = await calculateRoute([state.current, station.point, destination]);
-      state.fuelStop = station;
-      setMarker('destination', destination);
-      drawRoute(dataRoute, 'address');
-      setNavigationMode(true);
-      status(`${station.name} is als tussenstop toegevoegd.`);
+        return { ...item, ahead, side, score: side * 10 + Math.max(0, ahead - state.progressKm) * 0.04 };
+      }).filter(item => item.ahead > state.progressKm + .2 && item.ahead <= searchEnd + 3 && item.side <= 4)
+        .sort((a,b) => a.score - b.score)
+        .slice(0, 3);
+      if (!candidates.length) throw new Error('Geen tankstation langs het komende deel van de route gevonden.');
+      state.fuelCandidates = candidates;
+      renderFuelChoices(candidates);
+      $('fuelSheet').hidden = false;
+      $('backdrop').hidden = false;
+      status('Kies een tankstation');
     } catch (error) { status(error.message); }
   }
 
@@ -645,14 +718,14 @@
     state.apiKey = $('apiKey').value.trim();
     state.profile = $('vehicleProfile').value;
     state.autoFollow = $('autoFollow').checked;
-    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow }));
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: state.apiKey, profile: state.profile, autoFollow: state.autoFollow, layoutMode: state.layoutMode }));
     closeSettings();
     status('Instellingen opgeslagen');
   }
 
   function bind(id, eventName, handler) {
     const element = $(id);
-    if (!element) { console.warn(`RouteRijder v10: element #${id} ontbreekt`); return; }
+    if (!element) { console.warn(`RouteRijder v11: element #${id} ontbreekt`); return; }
     element.addEventListener(eventName, handler);
   }
 
@@ -666,6 +739,8 @@
   bind('overview', 'click', showOverview);
   bind('clear', 'click', clearRoute);
   bind('fuel', 'click', addNearestFuelStop);
+  bind('layoutToggle', 'click', toggleLayoutMode);
+  bind('closeFuelSheet', 'click', closeFuelSheet);
   bind('stopNavigation', 'click', stopNavigation);
   bind('developer', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = !panel.hidden; });
   bind('closeDeveloper', 'click', () => { const panel = $('developerPanel'); if (panel) panel.hidden = true; });
@@ -674,13 +749,14 @@
   bind('simSpeed', 'change', event => { state.simulation.speedFactor = Number(event.target.value); });
   bind('settings', 'click', openSettings);
   bind('closeSettings', 'click', closeSettings);
-  bind('backdrop', 'click', closeSettings);
+  bind('backdrop', 'click', () => { closeSettings(); closeFuelSheet(); });
   bind('saveSettings', 'click', saveSettings);
   bind('destinationQuery', 'input', () => { state.destinationPoint = null; });
   bind('startQuery', 'input', () => { state.startPoint = null; });
   bind('destinationQuery', 'keydown', async event => { if (event.key === 'Enter') { try { await showSearchResults(event.target.value.trim(), 'destination'); } catch (error) { status(error.message); } } });
   bind('startQuery', 'keydown', async event => { if (event.key === 'Enter' && state.startMode === 'manual') { try { await showSearchResults(event.target.value.trim(), 'start'); } catch (error) { status(error.message); } } });
 
+  applyLayoutMode();
   $('apiKey').value = state.apiKey;
   $('vehicleProfile').value = state.profile;
   $('autoFollow').checked = state.autoFollow;

@@ -13,7 +13,8 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">v10</div>
+  <div class="version-badge" title="Applicatieversie">v11</div>
+  <button id="layoutToggle" class="layout-toggle" title="Wissel staand/liggend paneel" aria-label="Wissel schermindeling">▯</button>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
 
   <header class="planner-card">
@@ -73,7 +74,7 @@
       <button id="clear" class="control-button danger">Wis</button>
     </div>
     <div id="routeActions" class="route-actions" hidden>
-      <button id="fuel" class="route-action fuel-button">⛽ Tankstation</button>
+      <button id="fuel" class="route-action fuel-button" title="Tankstation toevoegen" aria-label="Tankstation toevoegen">⛽</button>
       <button id="stopNavigation" class="route-action stop-button">Stop navigatie</button>
     </div>
   </section>
@@ -98,10 +99,19 @@
     <p>De API-key wordt alleen lokaal in deze browser opgeslagen. Voor een openbare app hoort deze achter een beveiligde proxy.</p>
     <button id="saveSettings" class="control-button primary full-width">Opslaan</button>
   </section>
+
+  <section id="fuelSheet" class="sheet fuel-sheet" hidden>
+    <div class="panel-title-row">
+      <h2>Kies een tankstation</h2>
+      <button id="closeFuelSheet" class="text-button">Sluiten</button>
+    </div>
+    <p class="fuel-intro">De drie bruikbaarste tankstations langs het komende deel van de route.</p>
+    <div id="fuelChoices" class="fuel-choices"></div>
+  </section>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=10"></script>
+<script src="./app.js?v=11"></script>
 </body>
 </html>

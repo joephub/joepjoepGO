@@ -1,10 +1,8 @@
-# RouteRijder v9
+# RouteRijder v11
 
-Wijzigingen:
-
-- De voertuigmarker staat lager in het scherm, zodat aanzienlijk meer van de toekomstige route zichtbaar is.
-- De camera gebruikt een vaste scherm-offset in plaats van zware onderpadding.
-- Een nieuwe route zet de simulatiestatus altijd schoon terug.
-- Starten, pauzeren, hervatten en opnieuw starten van de simulatie gebeurt deterministisch.
-- Een voltooide simulatie begint bij een volgende start automatisch opnieuw bij het begin.
-- Linksonder staat versienummer v9.
+Statische GitHub Pages-versie met:
+- aparte navigatiepanelen voor staande en liggende indeling;
+- kleine knop om tussen beide indelingen te schakelen;
+- kaart blijft volledig vrij van navigatie-informatie;
+- compacte tankknop;
+- keuze uit drie tankstations langs de komende route.
