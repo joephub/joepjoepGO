@@ -2,7 +2,7 @@
   'use strict';
 
   const APP_NAME = 'joepjoepGO';
-  const APP_VERSION = '23';
+  const APP_VERSION = '24';
   const $ = (id) => document.getElementById(id);
   const KEY = 'joepjoepgo-settings-v1';
   const LEGACY_KEY = 'routerijder-settings';
@@ -64,6 +64,7 @@
     fuelAbortController: null,
     statusTimer: null,
     gpxLoadToken: 0,
+    nextManeuver: null,
     gpxDocument: null,
     gpxEditor: { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null, pointerId: null, history: [] },
     gpxAnalysis: { sourceParts: [], segments: [], active: false, selectedIds: new Set(), jumpThresholdMeters: Number(saved.gpxJumpThresholdMeters) >= 0 ? Number(saved.gpxJumpThresholdMeters) : 5000 }
@@ -409,6 +410,7 @@
 
     renderGpsIndicator();
     updatePauseButton();
+    updateTurnAlert();
     renderRoutePreview();
     applyLayoutMode();
     if (state.mapReady) window.requestAnimationFrame(() => map.resize());
@@ -636,9 +638,12 @@
     clearGpxPreview();
 
     const first = state.route.instructions[0];
-    $('instruction').textContent = first ? translateInstruction(first.text) : mode === 'gpx' ? 'Volg de GPX-route' : 'Volg de route';
+    const firstText = first ? translateInstruction(first.text) : mode === 'gpx' ? 'Volg de GPX-route' : 'Volg de route';
+    $('instruction').textContent = firstText;
     $('nextDistance').textContent = 'Start';
-    $('maneuverIcon').textContent = first ? maneuverSymbol(first.sign) : '↑';
+    $('maneuverIcon').textContent = first ? maneuverSymbol(first.sign, firstText) : '↑';
+    state.nextManeuver = null;
+    updateTurnAlert();
     setRemaining(fmtDistance(state.route.distance), state.route.time ? fmtDuration(state.route.time) : '-');
     renderUi();
     updateDeveloper();
@@ -1023,6 +1028,77 @@
 
 
 
+  function normalizeTurnText(text) {
+    return String(text || '').toLocaleLowerCase('nl-NL').replace(/\s+/g, ' ').trim();
+  }
+
+  function maneuverSignFromText(text) {
+    const value = normalizeTurnText(text);
+    if (!value) return null;
+    if (/bestemming bereikt|arrive at destination|aangekomen/.test(value)) return 4;
+    if (/keer om|u-turn|u turn/.test(value)) return 8;
+    if (/rotonde|roundabout/.test(value)) return 6;
+    if (/houd links aan|links aanhouden|keep left/.test(value)) return -7;
+    if (/houd rechts aan|rechts aanhouden|keep right/.test(value)) return 7;
+    if (/scherp links|sharp left/.test(value)) return -3;
+    if (/scherp rechts|sharp right/.test(value)) return 3;
+    if (/schuin links|slight left/.test(value)) return -1;
+    if (/schuin rechts|slight right/.test(value)) return 1;
+    if (/linksaf|sla links|turn left|naar links/.test(value)) return -2;
+    if (/rechtsaf|sla rechts|turn right|naar rechts/.test(value)) return 2;
+    return null;
+  }
+
+  function resolvedManeuverSign(sign, text) {
+    const numeric = Number(sign);
+    const textSign = maneuverSignFromText(text);
+    // GraphHopper gebruikt -7/7 voor links/rechts aanhouden. Bij oudere of
+    // onvolledige antwoorden kan de tekst richting geven terwijl sign 0 blijft.
+    if (textSign !== null && (!Number.isFinite(numeric) || numeric === 0 || Math.abs(textSign) === 7)) return textSign;
+    return Number.isFinite(numeric) ? numeric : (textSign ?? 0);
+  }
+
+  function maneuverSymbol(sign, text = '') {
+    const resolved = resolvedManeuverSign(sign, text);
+    const symbols = {
+      '-99': '?', '-98': '↶', '-8': '↶', '-7': '↖', '-6': '↗',
+      '-3': '↙', '-2': '←', '-1': '↖', '0': '↑',
+      '1': '↗', '2': '→', '3': '↘', '4': '🏁', '5': '🏁',
+      '6': '↻', '7': '↗', '8': '↷', '9': '⛴'
+    };
+    return symbols[String(resolved)] || '↑';
+  }
+
+  function isUpcomingTurn(sign, text) {
+    const resolved = resolvedManeuverSign(sign, text);
+    return [-8, -7, -6, -3, -2, -1, 1, 2, 3, 6, 7, 8].includes(resolved);
+  }
+
+  function updateTurnAlert(distanceM, instruction) {
+    const element = $('turnAlert');
+    if (!element) return;
+    if (Number.isFinite(distanceM) && instruction) {
+      state.nextManeuver = {
+        distanceM,
+        sign: resolvedManeuverSign(instruction.sign, instruction.text),
+        text: translateInstruction(instruction.text)
+      };
+    }
+    const next = state.nextManeuver;
+    const visible = Boolean(
+      state.navigationActive
+      && !state.navigationPaused
+      && next
+      && next.distanceM > 8
+      && next.distanceM <= 500
+      && isUpcomingTurn(next.sign, next.text)
+    );
+    element.hidden = !visible;
+    if (!visible) return;
+    element.setAttribute('aria-label', `${next.text} over ${fmtDistance(next.distanceM)}`);
+    element.title = `${next.text} over ${fmtDistance(next.distanceM)}`;
+  }
+
   function updateInstructionByIndex(index) {
     const instructions = state.route?.instructions || [];
     if (!instructions.length) {
@@ -1031,28 +1107,40 @@
       $('nextDistance').textContent = state.mode === 'gpx' ? 'Op route' : 'Nu';
       if ($('devInstruction')) $('devInstruction').textContent = text;
       $('maneuverIcon').textContent = '↑';
+      state.nextManeuver = null;
+      updateTurnAlert();
       return;
     }
 
-    const upcoming = instructions.find(item => item.interval && Number(item.interval[0]) > index)
-      || instructions.find(item => item.interval && Number(item.interval[1]) >= index)
-      || instructions[instructions.length - 1];
     const cumulative = cumulativeRouteKm();
-    const targetIndex = Math.min(cumulative.length - 1, Math.max(0, Number(upcoming.interval?.[0] || index)));
-    const distanceM = Math.max(0, ((cumulative[targetIndex] || 0) - state.progressKm) * 1000);
+    const progressKm = Math.max(0, Number(state.progressKm) || 0);
+    const passToleranceKm = 0.012;
+    const enriched = instructions.map((item, order) => {
+      const targetIndex = Math.min(cumulative.length - 1, Math.max(0, Number(item.interval?.[0] ?? index)));
+      return { item, order, targetIndex, startKm: cumulative[targetIndex] || 0 };
+    });
+
+    let selected = enriched.find(entry => entry.startKm >= progressKm - passToleranceKm);
+    if (!selected) selected = enriched[enriched.length - 1];
+
+    // Een puur 'rechtdoor'-segment vlak voor een echte splitsing is visueel
+    // minder belangrijk. Toon dan alvast de eerstvolgende echte manoeuvre.
+    if (resolvedManeuverSign(selected.item.sign, selected.item.text) === 0) {
+      const nextAction = enriched.slice(selected.order + 1).find(entry => isUpcomingTurn(entry.item.sign, entry.item.text));
+      if (nextAction) selected = nextAction;
+    }
+
+    const upcoming = selected.item;
+    const distanceM = Math.max(0, (selected.startKm - progressKm) * 1000);
     const text = translateInstruction(upcoming.text);
     $('instruction').textContent = text;
     $('nextDistance').textContent = distanceM < 15 ? 'Nu' : `Over ${fmtDistance(distanceM)}`;
     if ($('devInstruction')) $('devInstruction').textContent = text;
-    $('maneuverIcon').textContent = maneuverSymbol(upcoming.sign);
+    $('maneuverIcon').textContent = maneuverSymbol(upcoming.sign, text);
+    updateTurnAlert(distanceM, upcoming);
   }
 
 
-
-  function maneuverSymbol(sign) {
-    const symbols = { '-3': '↶', '-2': '↙', '-1': '↖', '0': '↑', '1': '↗', '2': '↘', '3': '↷', '4': '🏁', '5': '🏁', '6': '↻', '-6': '↺' };
-    return symbols[String(sign)] || '↑';
-  }
 
   async function smartRejoin(point) {
     if (!state.original.length || !state.apiKey || Date.now() - state.lastReroute < 25000) return;
@@ -2004,6 +2092,7 @@
     if (!state.navigationActive || state.navigationPaused) return;
     state.navigationPaused = true;
     state.follow = false;
+    updateTurnAlert();
     if (state.simulation.playing) stopSimulationTimer();
     releaseWakeLock();
     updatePauseButton();
@@ -2015,6 +2104,7 @@
     state.navigationPaused = false;
     state.follow = true;
     updatePauseButton();
+    updateTurnAlert();
     requestWakeLock();
     if (state.navigationSource === 'simulation') {
       toggleSimulation();
@@ -2032,6 +2122,8 @@
     closeFuelSheet();
     stopSimulationTimer();
     state.navigationPaused = false;
+    state.nextManeuver = null;
+    updateTurnAlert();
     state.navigationSource = null;
     state.pendingNavigationStart = false;
     state.follow = false;
@@ -2119,6 +2211,8 @@
       setCurrentPosition(end, { source: 'Simulatie', speedMps: 0, heading: bearingAlongRoute(line, Math.max(0,totalKm-.05)), progressKm: totalKm, forceNavigationUpdate: true });
       stopSimulationTimer();
       state.navigationPaused = true;
+      state.nextManeuver = null;
+      updateTurnAlert();
       updatePauseButton();
       $('instruction').textContent = 'Bestemming bereikt';
       $('nextDistance').textContent = 'Nu';
@@ -2153,6 +2247,8 @@
     state.navigationSource = null;
     state.navigationPaused = false;
     state.navigationActive = false;
+    state.nextManeuver = null;
+    updateTurnAlert();
     state.follow = false;
     state.pickingStart = false;
     state.pickingDestination = false;
@@ -2203,6 +2299,8 @@
     $('nextDistance').textContent = 'Nu';
     setRemaining('-', '-');
     $('maneuverIcon').textContent = '↑';
+    state.nextManeuver = null;
+    updateTurnAlert();
     if ($('developerPanel')) $('developerPanel').hidden = true;
     updateDeveloper();
     renderUi();
