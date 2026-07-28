@@ -2,7 +2,7 @@
   "name": "joepjoepGO",
   "short_name": "joepjoepGO",
   "description": "joepjoepGO: GPS-navigatie, GPX-analyse en GPX-bewerking.",
-  "start_url": "./?v=29",
+  "start_url": "./?v=30",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",

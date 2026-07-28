@@ -1,24 +1,24 @@
-# joepjoepGO v29
+# joepjoepGO v30
 
-## Belangrijkste correctie
+## Verbeterde hybride GPX-herkenning
 
-De hybride GPX-verwerking gebruikt voortaan de gewone GraphHopper Routing API als corridorproef. Het Map Matching-onderdeel is niet in ieder GraphHopper-abonnement beschikbaar. Een fout of ontbrekend abonnement wordt daardoor niet meer ten onrechte uitgelegd als een offroaddeel.
+De hybride analyse werkt nu met korte lokale vensters in plaats van eerst complete delen van circa 18 km goed of fout te verklaren. Daardoor kan een traject afwisselend bestaan uit:
 
-Per GPX-deel berekent joepjoepGO een wegroute door enkele vormpunten. Daarna vergelijkt de app de volledige berekende lijn met de oorspronkelijke GPX:
+- blauw: lokaal betrouwbaar aan een weg gekoppeld;
+- oranje: exact GPX/offroad behouden;
+- groen: berekende verbinding tussen losse GPX-trajecten;
+- rood: verbinding die handmatig moet worden gecontroleerd.
 
-- blijft de wegroute volledig binnen de gekozen tolerantie, dan wordt het deel blauw;
-- wijkt de wegroute te veel af, dan onderzoekt de app kleinere delen afzonderlijk;
-- alleen delen waarvoor geen betrouwbare wegroute binnen de corridor bestaat, blijven oranje;
-- echte openingen tussen GPX-trajecten blijven groen of rood volgens de bestaande logica.
+Een enkel bospad of een afwijkend stuk maakt niet meer automatisch de rest van het traject oranje. De vergelijking is bovendien bestand tegen enkele GPS- en kaartuitschieters. Routeaanvragen worden begrensd en bij een GraphHopper-limiet stopt de verwerking met een duidelijke fout in plaats van alle resterende delen stilzwijgend oranje te maken.
 
-Hierdoor moeten gewone wegen zoals in het gemelde voorbeeld blauw worden, terwijl bewuste offroadstukken exact als oranje GPX behouden blijven.
+Een corridor van 10 meter is zeer strikt. Voor opgenomen motorroutes is 30 meter meestal een betere keuze, omdat GPS-sporen en de wegmiddellijn enkele meters uit elkaar kunnen liggen.
 
 ## Publiceren
 
 Upload alle bestanden naar de hoofdmap van de GitHub Pages-repository en open daarna:
 
 ```text
-?v=29
+?v=30
 ```
 
-Controleer linksonder of **joepjoepGO v29** staat.
+Controleer linksonder of **joepjoepGO v30** staat.

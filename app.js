@@ -2,7 +2,7 @@
   'use strict';
 
   const APP_NAME = 'joepjoepGO';
-  const APP_VERSION = '29';
+  const APP_VERSION = '30';
   const $ = (id) => document.getElementById(id);
   const KEY = 'joepjoepgo-settings-v1';
   const LEGACY_KEY = 'routerijder-settings';
@@ -753,7 +753,9 @@
     if (!response.ok) {
       let detail = '';
       try { detail = (await response.json()).message || ''; } catch (_) {}
-      throw new Error(`Route via GPX-punten mislukt (${response.status})${detail ? `: ${detail}` : ''}.`);
+      const error = new Error(`Route via GPX-punten mislukt (${response.status})${detail ? `: ${detail}` : ''}.`);
+      error.status = response.status;
+      throw error;
     }
     const data = await response.json();
     const path = data.paths?.[0];
@@ -1118,7 +1120,12 @@
     return sorted[Math.max(0, Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1))];
   }
 
-  function distancesToLineMeters(coordinates, lineCoordinates, maxSamples = 70) {
+  function fractionWithin(values, threshold) {
+    if (!values.length || !Number.isFinite(threshold)) return 0;
+    return values.filter(value => Number.isFinite(value) && value <= threshold).length / values.length;
+  }
+
+  function distancesToLineMeters(coordinates, lineCoordinates, maxSamples = 90) {
     if (!coordinates?.length || !lineCoordinates?.length) return [];
     const line = turf.lineString(lineCoordinates);
     return sampleLineCoordinates(coordinates, maxSamples).map(point => {
@@ -1136,16 +1143,56 @@
     const matchedToOriginal = distancesToLineMeters(matchedCoordinates, originalCoordinates);
     const startDistance = turf.distance(turf.point(originalCoordinates[0]), turf.point(matchedCoordinates[0]), { units: 'meters' });
     const endDistance = turf.distance(turf.point(originalCoordinates.at(-1)), turf.point(matchedCoordinates.at(-1)), { units: 'meters' });
-    const p95 = Math.max(percentile(originalToMatched), percentile(matchedToOriginal));
+
+    // Een GPX-spoor en de OSM-wegmiddellijn liggen in de praktijk zelden exact
+    // op elkaar. De gekozen corridor blijft leidend, maar enkele GPS-/kaart-
+    // uitschieters mogen niet een compleet wegdeel oranje maken.
+    const coreTolerance = toleranceMeters + Math.min(10, Math.max(5, toleranceMeters * 0.25));
+    const looseTolerance = toleranceMeters + Math.min(24, Math.max(14, toleranceMeters * 0.65));
+    const endpointTolerance = toleranceMeters + Math.min(30, Math.max(20, toleranceMeters));
+
+    const originalCoverage = fractionWithin(originalToMatched, coreTolerance);
+    const matchedCoverage = fractionWithin(matchedToOriginal, coreTolerance);
+    const originalLooseCoverage = fractionWithin(originalToMatched, looseTolerance);
+    const matchedLooseCoverage = fractionWithin(matchedToOriginal, looseTolerance);
+    const p90 = Math.max(percentile(originalToMatched, 0.90), percentile(matchedToOriginal, 0.90));
+    const p98 = Math.max(percentile(originalToMatched, 0.98), percentile(matchedToOriginal, 0.98));
     const maxDistance = Math.max(...originalToMatched, ...matchedToOriginal);
     const lengthRatio = matchedLength / originalLength;
-    const accepted = p95 <= toleranceMeters
-      && maxDistance <= toleranceMeters
-      && startDistance <= toleranceMeters
-      && endDistance <= toleranceMeters
-      && lengthRatio >= 0.68
-      && lengthRatio <= 1.48;
-    return { accepted, p95, maxDistance, startDistance, endDistance, lengthRatio };
+
+    const accepted = originalCoverage >= 0.78
+      && matchedCoverage >= 0.72
+      && originalLooseCoverage >= 0.95
+      && matchedLooseCoverage >= 0.92
+      && p90 <= coreTolerance
+      && p98 <= looseTolerance
+      && startDistance <= endpointTolerance
+      && endDistance <= endpointTolerance
+      && lengthRatio >= 0.72
+      && lengthRatio <= 1.42;
+
+    // Bij een gemengd deel (bijvoorbeeld eerst asfalt, daarna een bospad) loont
+    // het om kleiner te onderzoeken. Bij een complete omweg juist niet.
+    const partlyAligned = originalLooseCoverage >= 0.24
+      || matchedLooseCoverage >= 0.24
+      || Math.min(startDistance, endDistance) <= endpointTolerance;
+
+    return {
+      accepted,
+      partlyAligned,
+      p90,
+      p98,
+      maxDistance,
+      startDistance,
+      endDistance,
+      lengthRatio,
+      originalCoverage,
+      matchedCoverage,
+      originalLooseCoverage,
+      matchedLooseCoverage,
+      coreTolerance,
+      looseTolerance
+    };
   }
 
   function splitCoordinatesNearHalf(coordinates) {
@@ -1156,7 +1203,7 @@
     return [coordinates.slice(0, splitIndex + 1), coordinates.slice(splitIndex)];
   }
 
-  function chunkCoordinatesByDistance(coordinates, maxKm = 18) {
+  function chunkCoordinatesByDistance(coordinates, maxKm = 2.6) {
     if (coordinates.length < 2) return [];
     const chunks = [];
     let current = [coordinates[0]];
@@ -1189,28 +1236,47 @@
   }
 
   function hybridRoutingPoints(coordinates, geometryKm) {
-    // Gebruik de gewone Routing API als corridorproef. Het Map Matching-
-    // onderdeel is niet in ieder GraphHopper-abonnement beschikbaar.
-    const count = geometryKm <= 0.35 ? 2 : geometryKm <= 1.5 ? 3 : 5;
+    // Maximaal vijf vormpunten houdt de gewone Routing API breed beschikbaar,
+    // terwijl kleine vensters de oorspronkelijke GPX-vorm goed vasthouden.
+    const count = geometryKm <= 0.30 ? 2 : geometryKm <= 0.85 ? 3 : geometryKm <= 1.7 ? 4 : 5;
     return sampleLineCoordinates(coordinates, count);
   }
 
-  async function roadCandidateForGpxWindow(coordinates, geometryKm) {
+  function hybridRequestKey(points) {
+    return points.map(([lng, lat]) => `${Number(lng).toFixed(5)},${Number(lat).toFixed(5)}`).join('|');
+  }
+
+  async function roadCandidateForGpxWindow(coordinates, geometryKm, context = {}) {
     const points = hybridRoutingPoints(coordinates, geometryKm);
-    return calculateRouteViaPointsChunk(points);
+    const key = hybridRequestKey(points);
+    if (context.cache?.has(key)) return cloneRouteData(context.cache.get(key));
+    const result = await calculateRouteViaPointsChunk(points);
+    if (context.cache) context.cache.set(key, cloneRouteData(result));
+    context.requests = (context.requests || 0) + 1;
+    return result;
+  }
+
+  function fatalHybridRoutingError(error) {
+    const statusCode = Number(error?.status);
+    const message = String(error?.message || '');
+    return [401, 402, 403, 429].includes(statusCode)
+      || /quota|rate limit|subscription|abonnement|allowed:\s*0|too many/i.test(message);
   }
 
   async function hybridiseGpxWindow(coordinates, toleranceMeters, context, depth = 0) {
     const geometryKm = turf.length(turf.lineString(coordinates), { units: 'kilometers' });
     const label = context.label || 'GPX-deel';
-    const canSplitFurther = depth < 8 && geometryKm > 0.16 && coordinates.length >= 2;
+    const canSplitBySize = geometryKm > 0.38 && coordinates.length >= 2;
     try {
-      const candidate = await roadCandidateForGpxWindow(coordinates, geometryKm);
+      const candidate = await roadCandidateForGpxWindow(coordinates, geometryKm, context);
       const assessment = assessHybridMatch(coordinates, candidate.coordinates, toleranceMeters);
       if (assessment.accepted) {
         return [routeResultComponent(candidate, 'matched', `${label} · op weg`, { assessment })];
       }
-      if (canSplitFurther) {
+
+      // Hoogstens twee lokale verfijningen. Dit vindt asfaltstukken rondom een
+      // offroaddeel zonder de exponentiële hoeveelheid API-aanvragen van v29.
+      if (depth < 2 && canSplitBySize && assessment.partlyAligned) {
         const [left, right] = splitCoordinatesNearHalfFlexible(coordinates);
         if (left.length >= 2 && right.length >= 2) {
           const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
@@ -1218,13 +1284,23 @@
           return first.concat(second);
         }
       }
+
       return [exactRouteComponent(coordinates, {
         label: `${label} · exact behouden`,
-        reason: `Geen wegroute volledig binnen ${toleranceMeters} m (95%: ${Math.round(assessment.p95)} m)`
+        reason: `Geen lokale wegroute binnen de corridor (90%: ${Math.round(assessment.p90)} m; dekking: ${Math.round(assessment.originalCoverage * 100)}%)`
       })];
     } catch (error) {
-      console.debug(`${label}: corridorproef via Routing API mislukt; dit deel wordt kleiner onderzocht.`, error);
-      if (canSplitFurther) {
+      if (fatalHybridRoutingError(error)) {
+        const message = Number(error.status) === 429
+          ? 'GraphHopper weigert tijdelijk extra routeaanvragen. Probeer het later opnieuw of kies GPX exact.'
+          : 'GraphHopper heeft deze routeaanvragen niet toegestaan. Controleer je API-key en abonnement.';
+        const fatal = new Error(message);
+        fatal.status = error.status;
+        throw fatal;
+      }
+
+      console.debug(`${label}: lokale corridorproef mislukt; kleiner deel wordt onderzocht.`, error);
+      if (depth < 1 && canSplitBySize) {
         const [left, right] = splitCoordinatesNearHalfFlexible(coordinates);
         if (left.length >= 2 && right.length >= 2) {
           const first = await hybridiseGpxWindow(left, toleranceMeters, context, depth + 1);
@@ -1234,19 +1310,25 @@
       }
       return [exactRouteComponent(coordinates, {
         label: `${label} · exact behouden`,
-        reason: 'Geen betrouwbare wegroute binnen de ingestelde corridor gevonden'
+        reason: 'Voor dit lokale deel kon geen bruikbare wegroute worden berekend'
       })];
     }
   }
 
   async function hybridiseGpxSegment(segment, index, total, toleranceMeters) {
-    const windows = chunkCoordinatesByDistance(segment.coordinates, 18);
+    // Kleine vaste vensters voorkomen dat één bospad een compleet traject van
+    // tientallen kilometers oranje maakt. Ze beperken tegelijk het aantal
+    // API-aanvragen veel sterker dan de recursieve 18 km-aanpak uit v29.
+    const windowKm = toleranceMeters <= 10 ? 2.0 : toleranceMeters <= 20 ? 2.4 : 2.8;
+    const windows = chunkCoordinatesByDistance(segment.coordinates, windowKm);
     const components = [];
+    const context = { cache: new Map(), requests: 0, label: segment.name || `Traject ${index + 1}` };
     for (let windowIndex = 0; windowIndex < windows.length; windowIndex += 1) {
       state.gpxPrepareProgress = `Hybride route · traject ${index + 1}/${total}${windows.length > 1 ? ` · deel ${windowIndex + 1}/${windows.length}` : ''}…`;
       renderUi();
-      const label = segment.name || `Traject ${index + 1}`;
-      components.push(...await hybridiseGpxWindow(windows[windowIndex], toleranceMeters, { label }));
+      components.push(...await hybridiseGpxWindow(windows[windowIndex], toleranceMeters, context));
+      // Een korte adempauze voorkomt piekbelasting bij lange GPX-bestanden.
+      if (windowIndex < windows.length - 1) await new Promise(resolve => window.setTimeout(resolve, 45));
     }
     return components;
   }
@@ -1300,13 +1382,14 @@
     const route = composeRouteComponents(components, { originalParts: ordered });
     const exactCount = route.components.filter(component => component.kind === 'exact').length;
     const unresolvedCount = route.components.filter(component => component.kind === 'unresolved').length;
-    if (routeMode === 'hybrid' && exactCount) warnings.push(`${exactCount} deel${exactCount === 1 ? '' : 'en'} exact als GPX behouden omdat geen berekende wegroute volledig binnen ${toleranceMeters} meter bleef.`);
+    if (routeMode === 'hybrid' && exactCount) warnings.push(`${exactCount} lokaal deel${exactCount === 1 ? '' : 'en'} exact als GPX behouden omdat daar geen betrouwbare wegroute binnen de gekozen corridor werd gevonden.`);
+    if (routeMode === 'hybrid' && toleranceMeters <= 10 && route.summary.exact > route.summary.matched) warnings.push('Een corridor van 10 meter is zeer strikt. GPS-sporen en de wegmiddellijn kunnen door meet- en kaartverschillen meer dan 10 meter uit elkaar liggen; 30 meter is meestal geschikter voor motorroutes.');
     if (unresolvedCount) warnings.push(`${unresolvedCount} verbinding${unresolvedCount === 1 ? '' : 'en'} moet op de kaart worden gecontroleerd.`);
     route.summary = componentSummary(route.components);
     const uniqueWarnings = [...new Set(warnings)];
     const method = routeMode === 'exact'
       ? `GPX exact · ${ordered.length} traject${ordered.length === 1 ? '' : 'en'}`
-      : `Hybride · maximaal ${toleranceMeters} m afwijking`;
+      : `Hybride · corridor ${toleranceMeters} m`;
     route.routeMode = routeMode;
     route.toleranceMeters = toleranceMeters;
     route.method = method;
