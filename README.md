@@ -1,10 +1,7 @@
-# RouteRijder v9
+# joepjoepGO v15
 
 Wijzigingen:
-
-- De voertuigmarker staat lager in het scherm, zodat aanzienlijk meer van de toekomstige route zichtbaar is.
-- De camera gebruikt een vaste scherm-offset in plaats van zware onderpadding.
-- Een nieuwe route zet de simulatiestatus altijd schoon terug.
-- Starten, pauzeren, hervatten en opnieuw starten van de simulatie gebeurt deterministisch.
-- Een voltooide simulatie begint bij een volgende start automatisch opnieuw bij het begin.
-- Linksonder staat versienummer v9.
+- De oriëntatieknop draait nu de volledige applicatie 90 graden wanneer de browser het scherm niet fysiek wil draaien.
+- Eerst wordt de native Screen Orientation API geprobeerd; anders gebruikt de app een CSS-rotatie.
+- Tijdens navigatie neemt de oriëntatieknop linksboven exact de plaats van het verborgen tandwiel over.
+- Versielabel: v14.

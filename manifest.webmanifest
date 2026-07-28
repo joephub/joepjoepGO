@@ -1,7 +1,7 @@
 {
-  "name": "RouteRijder",
-  "short_name": "RouteRijder",
-  "description": "GPS-navigatie met adresroutes en GPX-routes.",
+  "name": "joepjoepGO",
+  "short_name": "joepjoepGO",
+  "description": "joepjoepGO: GPS-navigatie met adresroutes en GPX-routes.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

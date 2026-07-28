@@ -8,14 +8,14 @@
   <link rel="icon" href="./icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="./styles.css" />
-  <title>RouteRijder</title>
+  <title>joepjoepGO</title>
 </head>
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">v12</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v15</div>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
-  <button id="layoutToggle" class="layout-toggle" title="Wissel schermindeling" hidden>▯</button>
+  <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
 
   <header class="planner-card">
     <div class="planner-row">
@@ -69,6 +69,7 @@
     <div class="controls">
       <button id="gps" class="control-button">Start GPS</button>
       <button id="gpx" class="control-button">Laad GPX</button>
+      <button id="editGpx" class="control-button" hidden>Bewerk GPX</button>
       <button id="overview" class="control-button">Overzicht</button>
       <button id="developer" class="control-button">Test</button>
       <button id="clear" class="control-button danger">Wis</button>
@@ -101,6 +102,21 @@
     <button id="saveSettings" class="control-button primary full-width">Opslaan</button>
   </section>
 
+  <section id="gpxEditorSheet" class="sheet gpx-editor-sheet" hidden>
+    <div class="panel-title-row">
+      <div>
+        <h2>GPX bewerken</h2>
+        <p class="editor-subtitle">Versleep de genummerde punten op de kaart of verwijder ze uit de lijst.</p>
+      </div>
+      <button id="closeGpxEditor" class="text-button">Sluiten</button>
+    </div>
+    <div id="gpxPointList" class="gpx-point-list"></div>
+    <div class="gpx-editor-actions">
+      <button id="restoreGpx" class="control-button">↺ Herstellen</button>
+      <button id="exportGpx" class="control-button primary">Exporteer nieuwe GPX</button>
+    </div>
+  </section>
+
   <section id="fuelSheet" class="sheet fuel-sheet" hidden>
     <div class="panel-title-row">
       <h2>Tankstation kiezen</h2>
@@ -113,6 +129,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=12"></script>
+<script src="./app.js?v=15"></script>
 </body>
 </html>
