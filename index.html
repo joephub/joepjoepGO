@@ -13,7 +13,7 @@
 <body>
 <div class="app">
   <div id="map" class="map"></div>
-  <div class="version-badge" title="Applicatieversie">joepjoepGO v19</div>
+  <div class="version-badge" title="Applicatieversie">joepjoepGO v20</div>
   <button id="settings" class="floating-settings" title="Instellingen">⚙</button>
   <button id="layoutToggle" class="layout-toggle" title="Draai navigatiescherm" hidden>▯</button>
 
@@ -138,6 +138,14 @@
       <div><h2>GPX-analyse</h2><p class="editor-subtitle">Losse tracks, tracksegmenten en grote sprongen worden als afzonderlijke trajecten weergegeven.</p></div>
       <button id="closeGpxAnalysis" class="text-button">Sluiten</button>
     </div>
+    <div class="gpx-analysis-settings">
+      <label for="gpxJumpThreshold">
+        <span>Knip bij verbindingssprong langer dan</span>
+        <span class="gpx-threshold-input"><input id="gpxJumpThreshold" type="number" min="0" step="100" value="5000" inputmode="numeric"><strong>meter</strong></span>
+      </label>
+      <button id="rerunGpxAnalysis" class="control-button primary">Opnieuw analyseren</button>
+      <small>Dit is de rechte afstand tussen twee opeenvolgende GPX-punten. Vul 0 in om alleen bestaande tracks en tracksegmenten te gebruiken.</small>
+    </div>
     <p id="gpxAnalysisSummary" class="gpx-analysis-summary"></p>
     <div class="gpx-analysis-toolbar">
       <button id="selectAllGpxSegments" class="control-button">Selecteer alles</button>
@@ -163,6 +171,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-<script src="./app.js?v=19"></script>
+<script src="./app.js?v=20"></script>
 </body>
 </html>

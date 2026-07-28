@@ -40,7 +40,7 @@
     rotationFallback: false,
     fuelCandidates: [],
     gpxEditor: { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null },
-    gpxAnalysis: { sourceParts: [], segments: [], active: false, selectedIds: new Set() }
+    gpxAnalysis: { sourceParts: [], segments: [], active: false, selectedIds: new Set(), jumpThresholdMeters: 5000 }
   };
 
   if (!window.maplibregl || !window.turf) {
@@ -579,7 +579,7 @@
     return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   }
 
-  function analyseGpxParts(parts) {
+  function analyseGpxParts(parts, jumpThresholdMeters = 5000) {
     const colors = ['#2563eb','#dc2626','#16a34a','#9333ea','#ea580c','#0891b2','#be123c','#65a30d','#4f46e5','#c026d3'];
     const segments = [];
     parts.forEach((part, partIndex) => {
@@ -587,9 +587,9 @@
       for (let i = 1; i < part.coordinates.length; i++) {
         steps.push(turf.distance(turf.point(part.coordinates[i-1]), turf.point(part.coordinates[i]), { units: 'kilometers' }));
       }
-      const typical = median(steps.filter(value => value > 0));
-      // Trackpunten horen dicht bij elkaar te liggen. Een abrupte sprong is vaak de naad tussen twee opgenomen ritten.
-      const jumpThreshold = part.type === 'route' ? Infinity : Math.max(0.75, Math.min(8, typical * 25));
+      // Een lange rechte verbinding tussen twee opeenvolgende GPX-punten is vaak de naad
+      // tussen twee aan elkaar geknoopte ritten. De gebruiker bepaalt zelf de grens.
+      const jumpThreshold = jumpThresholdMeters > 0 ? jumpThresholdMeters / 1000 : Infinity;
       let current = [part.coordinates[0]];
       let splitReason = part.type === 'tracksegment' ? 'GPX-tracksegment' : part.type === 'route' ? 'GPX-route' : 'GPX-punten';
       for (let i = 1; i < part.coordinates.length; i++) {
@@ -648,9 +648,12 @@
     const list = $('gpxAnalysisList');
     if (!list) return;
     const segments = state.gpxAnalysis.segments;
+    const thresholdDescription = state.gpxAnalysis.jumpThresholdMeters === 0
+      ? 'Automatisch opknippen op verbindingssprongen staat uit.'
+      : `Er wordt geknipt wanneer de rechte afstand tussen twee opeenvolgende GPX-punten groter is dan ${state.gpxAnalysis.jumpThresholdMeters.toLocaleString('nl-NL')} meter.`;
     $('gpxAnalysisSummary').textContent = segments.length === 1
-      ? 'Er is één doorlopend traject gevonden.'
-      : `${segments.length} afzonderlijke trajecten gevonden. Vink trajecten aan om er samen één nieuw GPX-bestand van te maken.`;
+      ? `Er is één doorlopend traject gevonden. ${thresholdDescription}`
+      : `${segments.length} afzonderlijke trajecten gevonden. ${thresholdDescription} Vink trajecten aan om er samen één nieuw GPX-bestand van te maken.`;
     list.innerHTML = '';
     segments.forEach(segment => {
       const row = document.createElement('div');
@@ -674,17 +677,36 @@
     updateGpxAnalysisSelectionUi();
   }
 
+  function readGpxJumpThreshold() {
+    const input = $('gpxJumpThreshold');
+    const value = Number(input?.value);
+    if (!Number.isFinite(value) || value < 0) throw new Error('Vul een geldige afstand van 0 meter of meer in.');
+    return Math.round(value);
+  }
+
+  function rerunGpxAnalysis() {
+    if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.');
+    try {
+      state.gpxAnalysis.jumpThresholdMeters = readGpxJumpThreshold();
+    } catch (error) {
+      return status(error.message);
+    }
+    state.gpxAnalysis.segments = analyseGpxParts(state.gpxAnalysis.sourceParts, state.gpxAnalysis.jumpThresholdMeters);
+    state.gpxAnalysis.selectedIds = new Set();
+    renderGpxAnalysis();
+    showGpxAnalysisOnMap();
+    const thresholdText = state.gpxAnalysis.jumpThresholdMeters === 0 ? 'zonder automatische knipgrens' : `met een knipgrens van ${state.gpxAnalysis.jumpThresholdMeters.toLocaleString('nl-NL')} meter`;
+    status(`${state.gpxAnalysis.segments.length} traject${state.gpxAnalysis.segments.length === 1 ? '' : 'en'} gevonden ${thresholdText}.`);
+  }
+
   function openGpxAnalysis() {
     if (!state.gpxAnalysis.sourceParts.length) return status('Laad eerst een GPX-bestand.');
     closeGpxEditor();
-    state.gpxAnalysis.segments = analyseGpxParts(state.gpxAnalysis.sourceParts);
-    state.gpxAnalysis.selectedIds = new Set();
     state.gpxAnalysis.active = true;
     $('gpxAnalysisSheet').hidden = false;
     $('backdrop').hidden = false;
-    renderGpxAnalysis();
-    showGpxAnalysisOnMap();
-    status(`${state.gpxAnalysis.segments.length} traject${state.gpxAnalysis.segments.length === 1 ? '' : 'en'} gevonden.`);
+    if ($('gpxJumpThreshold')) $('gpxJumpThreshold').value = String(state.gpxAnalysis.jumpThresholdMeters);
+    rerunGpxAnalysis();
   }
 
   function closeGpxAnalysis() {
@@ -696,7 +718,7 @@
 
   function segmentGpxXml(segment) {
     const trackPoints = segment.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v19" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} - traject ${segment.id}</name></metadata>\n  <trk><name>${escapeXml(segment.name)} - traject ${segment.id}</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v20" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} - traject ${segment.id}</name></metadata>\n  <trk><name>${escapeXml(segment.name)} - traject ${segment.id}</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
   }
 
   function downloadText(text, fileName) {
@@ -724,7 +746,7 @@
       const points = segment.coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
       return `    <trkseg>\n${points}\n    </trkseg>`;
     }).join('\n');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v19" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(baseName)} - samengestelde selectie</name></metadata>\n  <trk><name>${escapeXml(baseName)} - samengestelde selectie</name>\n${trackSegments}\n  </trk>\n</gpx>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v20" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(baseName)} - samengestelde selectie</name></metadata>\n  <trk><name>${escapeXml(baseName)} - samengestelde selectie</name>\n${trackSegments}\n  </trk>\n</gpx>`;
   }
 
   function exportSelectedGpxSegments() {
@@ -944,7 +966,7 @@
     const coordinates = state.gpxEditor.editCoordinates;
     if (coordinates.length < 2) return status('Er zijn onvoldoende punten om te exporteren.');
     const trackPoints = coordinates.map(point => `      <trkpt lat="${point[1].toFixed(7)}" lon="${point[0].toFixed(7)}"></trkpt>`).join('\n');
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v19" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="joepjoepGO v20" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name></metadata>\n  <trk><name>${escapeXml(state.gpxEditor.fileName)} bewerkt</name><trkseg>\n${trackPoints}\n  </trkseg></trk>\n</gpx>`;
     const blob = new Blob([xml], { type: 'application/gpx+xml;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -963,7 +985,7 @@
       const { parts, coordinates } = parseGpx(xml);
       if (coordinates.length < 2) throw new Error('Geen bruikbare routepunten gevonden.');
       const distance = turf.length(turf.lineString(coordinates), { units: 'kilometers' }) * 1000;
-      state.gpxAnalysis = { sourceParts: parts.map(part => ({ ...part, coordinates: part.coordinates.map(point => [...point]) })), segments: [], active: false, selectedIds: new Set() };
+      state.gpxAnalysis = { sourceParts: parts.map(part => ({ ...part, coordinates: part.coordinates.map(point => [...point]) })), segments: [], active: false, selectedIds: new Set(), jumpThresholdMeters: 5000 };
       state.gpxEditor = {
         active: false,
         fileName: file.name.replace(/\.gpx$/i, '') || 'route',
@@ -1251,7 +1273,7 @@
     state.original = [];
     removeSelectedMarker();
     state.gpxEditor = { active: false, fileName: 'route', originalCoordinates: [], editCoordinates: [], selectedIndices: new Set(), selectedMarker: null, boxMode: false, boxStart: null, boxElement: null };
-    state.gpxAnalysis = { sourceParts: [], segments: [], active: false, selectedIds: new Set() };
+    state.gpxAnalysis = { sourceParts: [], segments: [], active: false, selectedIds: new Set(), jumpThresholdMeters: 5000 };
     if ($('analyseGpx')) $('analyseGpx').hidden = true;
     map.getSource('gpx-analysis')?.setData(emptyGeoJson());
     if ($('editGpx')) $('editGpx').hidden = true;
@@ -1292,7 +1314,7 @@
 
   function bind(id, eventName, handler) {
     const element = $(id);
-    if (!element) { console.warn(`joepjoepGO v18: element #${id} ontbreekt`); return; }
+    if (!element) { console.warn(`joepjoepGO v20: element #${id} ontbreekt`); return; }
     element.addEventListener(eventName, handler);
   }
 
@@ -1306,6 +1328,8 @@
   bind('editGpx', 'click', openGpxEditor);
   bind('analyseGpx', 'click', openGpxAnalysis);
   bind('closeGpxAnalysis', 'click', closeGpxAnalysis);
+  bind('rerunGpxAnalysis', 'click', rerunGpxAnalysis);
+  bind('gpxJumpThreshold', 'keydown', event => { if (event.key === 'Enter') rerunGpxAnalysis(); });
   bind('exportAllGpxSegments', 'click', exportAllGpxSegments);
   bind('exportSelectedGpxSegments', 'click', exportSelectedGpxSegments);
   bind('selectAllGpxSegments', 'click', selectAllGpxSegments);

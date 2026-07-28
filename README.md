@@ -1,4 +1,4 @@
-# joepjoepGO v19
+# joepjoepGO v20
 
 Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-bewerker.
 
@@ -15,4 +15,4 @@ Deze versie heeft aparte desktop- en mobiele layouts en een uitgebreidere GPX-be
 Na het laden van een GPX kan **Analyseer GPX** worden gekozen. Expliciete tracks/tracksegmenten en abrupte geografische sprongen worden als aparte gekleurde trajecten getoond. Elk traject is afzonderlijk als GPX te exporteren.
 
 
-Nieuw in v19: compact analysepaneel, kaart blijft bedienbaar, trajecten aanvinken en als één GPX met meerdere tracksegmenten exporteren.
+Nieuw in v20: instelbare knipgrens voor rechte verbindingssprongen tussen opeenvolgende GPX-punten. Standaard 5.000 meter; 0 schakelt automatisch opknippen uit.

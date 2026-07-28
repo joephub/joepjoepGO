@@ -526,12 +526,12 @@ body.gpx-box-selecting #map canvas { cursor: crosshair !important; }
 @media (min-width: 900px) { .gpx-analysis-sheet { width: min(560px, 38vw); left: auto; right: 12px; bottom: 12px; max-height: calc(100vh - 24px); border-radius: 22px; } }
 
 
-/* GPX-analyse v19: kaart blijft bruikbaar en trajecten zijn combineerbaar */
+/* GPX-analyse v20: kaart blijft bruikbaar en trajecten zijn combineerbaar */
 .gpx-analysis-sheet {
   top: auto;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto auto auto minmax(120px, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(120px, 1fr) auto;
 }
 .gpx-analysis-toolbar {
   display: grid;
@@ -585,4 +585,27 @@ body.gpx-box-selecting #map canvas { cursor: crosshair !important; }
   .gpx-analysis-actions { grid-template-columns: 1fr; }
   .gpx-analysis-row { grid-template-columns: 24px 14px minmax(0,1fr) auto; }
   .gpx-analysis-row small:last-child { display: none; }
+}
+
+
+/* Instelbare GPX-knipgrens v20 */
+.gpx-analysis-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: end;
+  padding: 10px;
+  margin: 8px 0 4px;
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.gpx-analysis-settings label { display: grid; gap: 5px; color: #334155; font-size: 13px; font-weight: 750; }
+.gpx-threshold-input { display: grid; grid-template-columns: minmax(80px, 1fr) auto; gap: 7px; align-items: center; }
+.gpx-threshold-input input { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; background: #fff; }
+.gpx-threshold-input strong { color: #64748b; font-size: 12px; }
+.gpx-analysis-settings > small { grid-column: 1 / -1; color: #64748b; line-height: 1.35; }
+@media (max-width: 899px) {
+  .gpx-analysis-settings { grid-template-columns: 1fr; }
+  .gpx-analysis-settings .control-button { width: 100%; }
 }
