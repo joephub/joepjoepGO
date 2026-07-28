@@ -1,3 +1,7 @@
+# RouteRijder v7
+
+Herstelt de routeweergave. Lege GeoJSON-bronnen worden nu geldig geïnitialiseerd, zodat de route-lagen daadwerkelijk worden aangemaakt. Linksonder staat een klein versielabel `v7`.
+
 # RouteRijder v6
 
 Statische navigatie-PWA voor GitHub Pages. Geen npm-build nodig.

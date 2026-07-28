@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const KEY = 'routerijder-v6-settings';
+  const KEY = 'routerijder-v7-settings';
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 
   const state = {
@@ -66,7 +66,7 @@
   });
 
   function addRouteLayer(id, color, width, opacity) {
-    map.addSource(id, { type: 'geojson', data: turf.lineString([]) });
+    map.addSource(id, { type: 'geojson', data: emptyGeoJson() });
     map.addLayer({
       id,
       type: 'line',
@@ -76,13 +76,13 @@
     });
   }
 
-  function emptyLine() {
-    return turf.lineString([]);
+  function emptyGeoJson() {
+    return { type: 'FeatureCollection', features: [] };
   }
 
   function setLineSource(id, coordinates) {
     const source = map.getSource(id);
-    if (source) source.setData(coordinates && coordinates.length >= 2 ? turf.lineString(coordinates) : emptyLine());
+    if (source) source.setData(coordinates && coordinates.length >= 2 ? turf.lineString(coordinates) : emptyGeoJson());
   }
 
   function updateRouteProgress(progressKm) {
