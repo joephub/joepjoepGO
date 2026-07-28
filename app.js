@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
-  const KEY = 'routerijder-v7-settings';
+  const KEY = 'routerijder-v8-settings';
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 
   const state = {
@@ -24,6 +24,9 @@
     destinationMarker: null,
     mapReady: false,
     pickingStart: false,
+    pickingDestination: false,
+    navigationActive: false,
+    fuelStop: null,
     follow: false,
     simulation: { timer: null, playing: false, distanceKm: 0, speedFactor: 5, lastTime: 0 },
     progressKm: 0,
@@ -261,23 +264,40 @@
     status(manual ? 'Handmatig vertrekpunt actief' : 'GPS als vertrekpunt actief');
   }
 
-  function requestMapStart() {
-    if (state.startMode !== 'manual') toggleStartMode();
-    state.pickingStart = true;
+  function requestMapPoint(target) {
+    if (target === 'start' && state.startMode !== 'manual') toggleStartMode();
+    state.pickingStart = target === 'start';
+    state.pickingDestination = target === 'destination';
     map.getCanvas().classList.add('map-pick-mode');
-    status('Klik op de kaart om het vertrekpunt te kiezen');
+    status(target === 'start' ? 'Klik op de kaart om het vertrekpunt te kiezen' : 'Klik op de kaart om de bestemming te kiezen');
+  }
+
+  function requestMapStart() {
+    requestMapPoint('start');
   }
 
   map.on('click', (event) => {
-    if (!state.pickingStart) return;
+    if (!state.pickingStart && !state.pickingDestination) return;
+    const target = state.pickingStart ? 'start' : 'destination';
     state.pickingStart = false;
+    state.pickingDestination = false;
     map.getCanvas().classList.remove('map-pick-mode');
     const point = [event.lngLat.lng, event.lngLat.lat];
-    state.startPoint = point;
-    state.startLabel = `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`;
-    $('startQuery').value = state.startLabel;
-    setMarker('start', point);
-    status('Vertrekpunt op kaart gekozen');
+    const label = `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`;
+    if (target === 'start') {
+      state.startPoint = point;
+      state.startLabel = label;
+      $('startQuery').value = label;
+      setMarker('start', point);
+      status('Vertrekpunt op kaart gekozen');
+    } else {
+      state.destinationPoint = point;
+      state.destinationLabel = label;
+      $('destinationQuery').value = label;
+      setMarker('destination', point);
+      status('Bestemming op kaart gekozen; route berekenen…');
+      planRoute();
+    }
   });
 
   function gpsErrorMessage(error) {
@@ -306,6 +326,7 @@
         $('gps').classList.add('active');
         $('gps').textContent = 'GPS actief';
         if (state.startMode === 'gps') $('startQuery').value = 'Mijn huidige locatie';
+        if (state.route) setNavigationMode(true);
         status(`GPS actief · nauwkeurigheid ${Math.round(pos.coords.accuracy)} m`);
       },
       error => {
@@ -338,13 +359,16 @@
     const totalKm = turf.length(line, { units: 'kilometers' });
     const percentage = totalKm ? Math.min(100, Math.round(location / totalKm * 100)) : 0;
     $('devProgress').textContent = `${percentage}%`;
+    const remainingKm = Math.max(0, totalKm - location);
+    const avgKmh = state.profile === 'bike' ? 22 : state.profile === 'foot' ? 5 : 70;
+    $('routeMeta').textContent = `${remainingKm.toFixed(1)} km resterend · ongeveer ${fmtDuration(remainingKm / avgKmh * 3600000)}`;
 
     updateInstructionByIndex(Number(snap.properties.index || 0));
 
     if (state.autoFollow && (state.follow || speedMps > 1.2 || state.simulation.playing)) {
       state.follow = true;
       const derivedHeading = Number.isFinite(heading) ? heading : bearingAlongRoute(line, location);
-      map.easeTo({ center: point, zoom: 16.5, pitch: 52, bearing: derivedHeading, duration: 350 });
+      map.easeTo({ center: point, zoom: 16.3, pitch: 55, bearing: derivedHeading, padding: { top: 70, bottom: 330, left: 35, right: 35 }, duration: 350 });
     }
 
     if ((state.mode === 'address' || state.mode === 'gpx') && offKm > 0.065) state.offCount += 1;
@@ -362,16 +386,45 @@
     return turf.bearing(a, b);
   }
 
+  function cumulativeRouteKm() {
+    const coords = state.route?.coordinates || [];
+    const values = [0];
+    for (let i = 1; i < coords.length; i += 1) {
+      values.push(values[i - 1] + turf.distance(turf.point(coords[i - 1]), turf.point(coords[i]), { units: 'kilometers' }));
+    }
+    return values;
+  }
+
+  function translateInstruction(text) {
+    let value = String(text || 'Volg de route');
+    const replacements = [
+      [/\band take\b/gi, 'en neem'], [/\btoward\b/gi, 'richting'], [/\bkeep left\b/gi, 'houd links aan'],
+      [/\bkeep right\b/gi, 'houd rechts aan'], [/\bturn left\b/gi, 'sla linksaf'], [/\bturn right\b/gi, 'sla rechtsaf'],
+      [/\bcontinue straight\b/gi, 'ga rechtdoor'], [/\bcontinue\b/gi, 'ga verder'], [/\bat the roundabout\b/gi, 'op de rotonde'],
+      [/\btake the (\d+)(?:st|nd|rd|th) exit\b/gi, 'neem de $1e afslag'], [/\bmake a u-turn\b/gi, 'keer om'],
+      [/\barrive at destination\b/gi, 'bestemming bereikt']
+    ];
+    replacements.forEach(([pattern, replacement]) => { value = value.replace(pattern, replacement); });
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
   function updateInstructionByIndex(index) {
     const instructions = state.route.instructions || [];
-    const current = instructions.find(item => item.interval && index >= item.interval[0] && index <= item.interval[1]) || instructions.find(item => item.interval && item.interval[0] >= index);
-    if (!current) {
+    const next = instructions.find(item => item.interval && Number(item.interval[0]) > index + 1)
+      || instructions.find(item => item.interval && Number(item.interval[0]) >= index)
+      || instructions[instructions.length - 1];
+    if (!next) {
       $('devInstruction').textContent = state.mode === 'gpx' ? 'Volg GPX' : '-';
+      $('instruction').textContent = state.mode === 'gpx' ? 'Volg de GPX-route' : 'Volg de route';
       return;
     }
-    $('instruction').textContent = `${fmtDistance(current.distance)} · ${current.text}`;
-    $('devInstruction').textContent = current.text;
-    $('maneuverIcon').textContent = maneuverSymbol(current.sign);
+    const cumulative = cumulativeRouteKm();
+    const targetIndex = Math.min(cumulative.length - 1, Number(next.interval?.[0] || index));
+    const distanceM = Math.max(0, ((cumulative[targetIndex] || 0) - state.progressKm) * 1000);
+    const text = translateInstruction(next.text);
+    $('instruction').textContent = `${fmtDistance(distanceM)} · ${text}`;
+    $('devInstruction').textContent = text;
+    $('maneuverIcon').textContent = maneuverSymbol(next.sign);
   }
 
   function maneuverSymbol(sign) {
@@ -429,11 +482,62 @@
     finally { event.target.value = ''; }
   }
 
+  function setNavigationMode(active) {
+    state.navigationActive = active;
+    document.body.classList.toggle('navigation-active', active);
+    if (active) {
+      $('developerPanel').hidden = true;
+      $('routeActions').hidden = false;
+    }
+  }
+
+  async function addNearestFuelStop() {
+    try {
+      if (!state.route || !state.current) throw new Error('Start eerst de navigatie of simulatie.');
+      status('Tankstations langs de komende route zoeken…');
+      const line = turf.lineString(state.route.coordinates);
+      const total = turf.length(line, { units: 'kilometers' });
+      const probeKm = Math.min(total, state.progressKm + 18);
+      const probe = turf.along(line, probeKm, { units: 'kilometers' }).geometry.coordinates;
+      const query = `[out:json][timeout:20];(node[\"amenity\"=\"fuel\"](around:12000,${probe[1]},${probe[0]});way[\"amenity\"=\"fuel\"](around:12000,${probe[1]},${probe[0]}););out center tags;`;
+      const response = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
+      if (!response.ok) throw new Error('Tankstations zoeken is tijdelijk niet beschikbaar.');
+      const data = await response.json();
+      const candidates = (data.elements || []).map(item => {
+        const point = item.type === 'node' ? [item.lon, item.lat] : [item.center?.lon, item.center?.lat];
+        return { point, name: item.tags?.name || item.tags?.brand || 'Tankstation' };
+      }).filter(item => item.point.every(Number.isFinite)).map(item => {
+        const snap = turf.nearestPointOnLine(line, turf.point(item.point), { units: 'kilometers' });
+        const ahead = Number(snap.properties.location || 0);
+        const side = turf.distance(turf.point(item.point), snap, { units: 'kilometers' });
+        return { ...item, ahead, score: side * 8 + Math.abs(ahead - probeKm) };
+      }).filter(item => item.ahead > state.progressKm + .3).sort((a,b) => a.score - b.score);
+      if (!candidates[0]) throw new Error('Geen tankstation langs het komende deel van de route gevonden.');
+      const station = candidates[0];
+      const destination = state.destinationPoint || state.route.coordinates[state.route.coordinates.length - 1];
+      const dataRoute = await calculateRoute([state.current, station.point, destination]);
+      state.fuelStop = station;
+      setMarker('destination', destination);
+      drawRoute(dataRoute, 'address');
+      setNavigationMode(true);
+      status(`${station.name} is als tussenstop toegevoegd.`);
+    } catch (error) { status(error.message); }
+  }
+
+  function stopNavigation() {
+    pauseSimulation();
+    setNavigationMode(false);
+    state.follow = false;
+    showOverview();
+    status('Navigatie gepauzeerd');
+  }
+
   function toggleSimulation() {
     if (!state.route || state.route.coordinates.length < 2) return status('Bereken of laad eerst een route.');
     if (state.simulation.playing) return pauseSimulation();
     state.simulation.playing = true;
     state.follow = true;
+    setNavigationMode(true);
     state.simulation.lastTime = performance.now();
     $('simPlay').textContent = '⏸ Pauze';
     $('simPlay').classList.add('active');
@@ -527,12 +631,15 @@
 
   $('startMode').onclick = toggleStartMode;
   $('useMapStart').onclick = requestMapStart;
+  $('useMapDestination').onclick = () => requestMapPoint('destination');
   $('planRoute').onclick = planRoute;
   $('gps').onclick = toggleGps;
   $('gpx').onclick = () => $('gpxFile').click();
   $('gpxFile').onchange = loadGpx;
   $('overview').onclick = showOverview;
   $('clear').onclick = clearRoute;
+  $('fuel').onclick = addNearestFuelStop;
+  $('stopNavigation').onclick = stopNavigation;
   $('developer').onclick = () => { $('developerPanel').hidden = !$('developerPanel').hidden; };
   $('closeDeveloper').onclick = () => { $('developerPanel').hidden = true; };
   $('simPlay').onclick = toggleSimulation;

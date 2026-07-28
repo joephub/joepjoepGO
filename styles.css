@@ -98,3 +98,40 @@ button { cursor: pointer; }
   letter-spacing: .04em;
   pointer-events: none;
 }
+
+.floating-settings {
+  position: absolute;
+  z-index: 21;
+  top: max(10px, env(safe-area-inset-top));
+  left: 10px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 13px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 8px 24px rgba(15,23,42,.22);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.destination-row { grid-template-columns: 52px minmax(0,1fr) 48px 48px !important; }
+.route-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.route-action { min-height: 50px; border: 0; border-radius: 16px; font-weight: 900; box-shadow: 0 8px 22px rgba(15,23,42,.2); }
+.fuel-button { background: #fbbf24; color: #422006; }
+.stop-button { background: rgba(255,255,255,.96); color: #991b1b; }
+
+.navigation-active .planner-card,
+.navigation-active .controls,
+.navigation-active .status,
+.navigation-active .floating-settings { display: none; }
+.navigation-active .bottom-panel { max-width: 760px; bottom: max(18px, env(safe-area-inset-bottom)); }
+.navigation-active .instruction-card { padding: 16px 18px; }
+.navigation-active .instruction-card strong { font-size: clamp(23px,4.5vw,34px); }
+.navigation-active .route-actions { display: grid !important; }
+
+@media (max-width: 620px) {
+  .floating-settings { width: 38px; height: 38px; }
+  .destination-row { grid-template-columns: 45px minmax(0,1fr) 44px 44px !important; }
+  .navigation-active .bottom-panel { left: 8px; right: 8px; }
+  .route-action { font-size: 14px; }
+}
